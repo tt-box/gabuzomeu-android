@@ -1,6 +1,26 @@
 import com.diffplug.gradle.spotless.SpotlessExtension
 import io.gitlab.arturbosch.detekt.extensions.DetektExtension
 
+// Dépendances transitives de l'outillage de build (AGP, Kover) touchées par des CVE.
+// Elles n'entrent jamais dans l'APK : elles ne vivent que dans le classpath du build.
+// Les contraintes forcent la première version corrigée sans changer le reste de la
+// résolution. À retirer dès qu'AGP 9.6 stable et une version de Kover embarquent ces
+// versions corrigées (`./gradlew buildEnvironment` permet de le vérifier).
+buildscript {
+    dependencies {
+        constraints {
+            classpath("org.freemarker:freemarker:2.3.35")
+            classpath("org.bouncycastle:bcprov-jdk18on:1.86")
+            classpath("org.bouncycastle:bcpkix-jdk18on:1.86")
+            classpath("org.bouncycastle:bcutil-jdk18on:1.86")
+            classpath("com.google.guava:guava:33.7.2-jre")
+            classpath("org.bitbucket.b_c:jose4j:0.9.6")
+            classpath("org.jdom:jdom2:2.0.6.1")
+            classpath("org.apache.commons:commons-lang3:3.18.0")
+        }
+    }
+}
+
 // Les plugins sont déclarés ici sans être appliqués : cela fixe leur version une
 // seule fois pour tout le build. Chaque module applique les convention plugins
 // gabuzomeu.* définis dans build-logic/.

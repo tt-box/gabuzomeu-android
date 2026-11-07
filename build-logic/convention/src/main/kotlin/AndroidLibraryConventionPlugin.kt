@@ -1,6 +1,7 @@
 import com.android.build.api.dsl.LibraryExtension
 import eu.ttbox.gabuzomeu.buildlogic.configureJUnitPlatform
 import eu.ttbox.gabuzomeu.buildlogic.configureKotlinCompiler
+import eu.ttbox.gabuzomeu.buildlogic.constrainLintToolVulnerableDependencies
 import eu.ttbox.gabuzomeu.buildlogic.javaVersion
 import eu.ttbox.gabuzomeu.buildlogic.versionInt
 import org.gradle.api.Plugin
@@ -36,6 +37,7 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
             }
         }
 
+        constrainLintToolVulnerableDependencies()
         configureKotlinCompiler()
         configureJUnitPlatform()
     }
