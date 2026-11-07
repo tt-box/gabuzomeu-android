@@ -50,6 +50,7 @@
     <string name="help_video_title">Watch the lesson</string>
     <string name="help_video_channel">Archive INA — “Comment compter comme les Shadoks ?”</string>
     <string name="help_video_hint">Opens YouTube</string>
+    <string name="help_video_unavailable">No app can open this link.</string>
 
     <string name="help_problem_title">Four words, and not one more</string>
     <string name="help_problem_body">Arithmetic had always given the Shadoks a good deal of trouble: they had only four words, and could not count any further than four. Professor Shadoko reformed all that.</string>
@@ -82,7 +83,7 @@
     <string name="game_open">Play with numbers</string>
     <string name="game_title">Shadok numbers</string>
     <string name="game_close">Back to the calculator</string>
-    <string name="game_read_prompt">What do these glyphs add up to?</string>
+    <string name="game_read_prompt">What number do these glyphs make?</string>
     <string name="game_write_prompt">How is this number written?</string>
     <string name="game_score">%1$d / %2$d</string>
     <string name="game_streak">Streak: %1$d</string>

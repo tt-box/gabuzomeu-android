@@ -12,10 +12,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import eu.ttbox.gabuzomeu.R
 import eu.ttbox.gabuzomeu.core.shadok.Rational
 import eu.ttbox.gabuzomeu.core.shadok.ShadokConverter
@@ -52,7 +56,7 @@ internal fun DigitRow(digit: ShadokDigit) {
             text = digit.label,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.width(LABEL_WIDTH),
+            modifier = Modifier.width(LABEL_WIDTH.toDpWidth()),
         )
         Text(
             text = stringResource(R.string.help_digit_value, digit.value),
@@ -80,12 +84,12 @@ internal fun NumberTable() {
             HeaderCell(
                 text = stringResource(R.string.mode_decimal),
                 align = TextAlign.End,
-                modifier = Modifier.width(CELL_DECIMAL),
+                modifier = Modifier.width(CELL_DECIMAL.toDpWidth()),
             )
             HeaderCell(
                 text = stringResource(R.string.help_table_glyphs),
                 align = TextAlign.End,
-                modifier = Modifier.width(CELL_GLYPHS),
+                modifier = Modifier.width(CELL_GLYPHS.toDpWidth()),
             )
             HeaderCell(
                 text = stringResource(R.string.help_table_name),
@@ -95,7 +99,7 @@ internal fun NumberTable() {
             HeaderCell(
                 text = stringResource(R.string.help_table_base4),
                 align = TextAlign.End,
-                modifier = Modifier.width(CELL_BASE4),
+                modifier = Modifier.width(CELL_BASE4.toDpWidth()),
             )
         }
 
@@ -116,7 +120,7 @@ private fun NumberRow(value: Int) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TableCell("$value", TextAlign.End, Modifier.width(CELL_DECIMAL))
+        TableCell("$value", TextAlign.End, Modifier.width(CELL_DECIMAL.toDpWidth()))
         ShadokGlyphText(
             expression = ShadokFormatter.format(base4, ShadokNotation.GLYPHS),
             // Les formes ne se prononcent pas : TalkBack lit les noms, comme partout ailleurs.
@@ -126,7 +130,7 @@ private fun NumberRow(value: Int) {
             operatorColor = MaterialTheme.colorScheme.tertiary,
             // Alignés à droite par construction : les unités tombent donc les unes sous les
             // autres d'une ligne à l'autre, ce qui fait voir les rangs.
-            modifier = Modifier.width(CELL_GLYPHS),
+            modifier = Modifier.width(CELL_GLYPHS.toDpWidth()),
         )
         Text(
             text = labels,
@@ -137,7 +141,7 @@ private fun NumberRow(value: Int) {
         TableCell(
             text = ShadokFormatter.format(base4, ShadokNotation.BASE4),
             align = TextAlign.End,
-            modifier = Modifier.width(CELL_BASE4),
+            modifier = Modifier.width(CELL_BASE4.toDpWidth()),
         )
     }
 }
@@ -154,7 +158,7 @@ private fun HeaderCell(text: String, align: TextAlign, modifier: Modifier = Modi
     )
 }
 
-/** Une cellule de chiffres. Largeur fixe et chasse fixe : sans quoi rien ne s'aligne. */
+/** Une cellule de chiffres. Largeur commune et chasse fixe : sans quoi rien ne s'aligne. */
 @Composable
 private fun TableCell(text: String, align: TextAlign, modifier: Modifier = Modifier) {
     Text(
@@ -171,11 +175,20 @@ private fun TableCell(text: String, align: TextAlign, modifier: Modifier = Modif
 private const val TABLE_LAST = 16
 
 private val GLYPH_SIZE = 28.dp
-private val LABEL_WIDTH = 48.dp
+
+// Toutes les largeurs de colonne sont en **sp**, pas en dp : elles portent du texte, et ce texte
+// grandit avec la police système. En dp, à 200 %, « 16 » perdait son premier glyphe et les
+// noms se coupaient. Converties au dernier moment par [toDpWidth], elles suivent la même échelle
+// que ce qu'elles contiennent — et les colonnes restent alignées d'une ligne à l'autre.
+private val LABEL_WIDTH = 48.sp
 
 // Les colonnes de chiffres sont taillées sur leur **en-tête**, pas sur leur contenu : « 16 »
 // tient dans 20 dp, mais « Décimal » se coupait en « Déci / mal » au-dessus. Une colonne dont
 // le titre se casse en deux se lit comme deux colonnes.
-private val CELL_DECIMAL = 64.dp
-private val CELL_GLYPHS = 64.dp
-private val CELL_BASE4 = 46.dp
+private val CELL_DECIMAL = 64.sp
+private val CELL_GLYPHS = 64.sp
+private val CELL_BASE4 = 46.sp
+
+/** Une largeur en sp, rendue en dp à l'échelle de police courante. */
+@Composable
+private fun TextUnit.toDpWidth(): Dp = with(LocalDensity.current) { toDp() }

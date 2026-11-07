@@ -90,6 +90,7 @@
     <string name="help_video_title">Voir la leçon en vidéo</string>
     <string name="help_video_channel">Archive INA — « Comment compter comme les Shadoks ? »</string>
     <string name="help_video_hint">Ouvre YouTube</string>
+    <string name="help_video_unavailable">Aucune application ne peut ouvrir ce lien.</string>
 
     <string name="help_problem_title">Quatre mots, et pas un de plus</string>
     <string name="help_problem_body">Le calcul avait toujours donné pas mal de fil à retordre aux Shadoks : ils n\'avaient que quatre mots, et ne pouvaient pas compter plus loin que quatre. Le professeur Shadoko a réformé tout ça.</string>
