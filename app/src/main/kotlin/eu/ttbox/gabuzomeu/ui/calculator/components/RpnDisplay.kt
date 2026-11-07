@@ -327,5 +327,5 @@ private fun LevelMarker(level: Int?, modifier: Modifier = Modifier) {
  * Contrairement à la grande ligne, le marqueur est ici dans le texte : une ligne de pile est
  * courte, il ne risque pas de sortir de l'écran.
  */
-private fun StackLevel.decimalWithMarker(): String =
+internal fun StackLevel.decimalWithMarker(): String =
     if (decimalApproximate) "${ShadokFormatter.APPROXIMATION}$decimal" else decimal

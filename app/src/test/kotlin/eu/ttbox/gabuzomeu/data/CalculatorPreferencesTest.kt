@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import eu.ttbox.gabuzomeu.core.eval.CalculationMode
 import eu.ttbox.gabuzomeu.core.eval.NumberNotation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -84,6 +85,58 @@ class CalculatorPreferencesTest {
             assertEquals("0.5", session.keys)
             assertEquals("", session.exact)
             assertEquals(StoredRpn(entry = "3"), session.rpn)
+        }
+    }
+
+    @Test
+    fun `les reglages d'affichage font l'aller-retour sur le disque`() = runTest {
+        withDataStore { dataStore ->
+            val store = CalculatorPreferences(dataStore)
+            val settings = DisplaySettings(showShadokLabels = false, showDecimal = false)
+
+            store.saveSettings(settings)
+
+            assertEquals(settings, store.settings.first())
+        }
+    }
+
+    @Test
+    fun `la session complete fait l'aller-retour avec ses modes et notations`() = runTest {
+        val session = StoredSession(
+            keys = "12",
+            notation = NumberNotation.SHADOK,
+            mode = CalculationMode.RPN,
+            rpn = StoredRpn(stack = "1;2", entry = "3", entryNegative = true),
+            simple = StoredSimple(
+                entry = "4",
+                accumulator = "5",
+                pending = "+",
+                entryNegative = true,
+            ),
+            showingResult = true,
+            decimalApproximate = true,
+        )
+
+        withDataStore { dataStore ->
+            val store = CalculatorPreferences(dataStore)
+            store.save(session)
+
+            assertEquals(session, store.session.first())
+        }
+    }
+
+    @Test
+    fun `une notation et un mode inconnus retombent sur les valeurs par defaut`() = runTest {
+        withDataStore { dataStore ->
+            dataStore.edit { preferences ->
+                preferences[stringPreferencesKey("notation")] = "HEXADECIMAL"
+                preferences[stringPreferencesKey("calculation-mode")] = "SCIENTIFIC"
+            }
+
+            val session = CalculatorPreferences(dataStore).session.first()
+
+            assertEquals(NumberNotation.DECIMAL, session.notation)
+            assertEquals(CalculationMode.CLASSIC, session.mode)
         }
     }
 

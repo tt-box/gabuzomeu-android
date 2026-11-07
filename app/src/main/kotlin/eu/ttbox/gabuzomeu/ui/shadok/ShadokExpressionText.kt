@@ -108,17 +108,16 @@ fun ShadokGlyphText(
 
     val annotated = remember(expression, operatorColor) {
         buildAnnotatedString {
-            expression.forEach { character ->
-                val digit = ShadokDigit.ofGlyphOrNull(character)
-                when {
-                    digit != null ->
+            tokenize(expression).forEach { token ->
+                when (token) {
+                    is ExpressionToken.Glyph ->
                         // Le second argument est le texte de repli si le contenu inline
                         // n'est pas résolu — on y met le glyphe lui-même.
-                        appendInlineContent(inlineIdOf(digit), digit.glyph.toString())
+                        appendInlineContent(inlineIdOf(token.digit), token.digit.glyph.toString())
 
-                    character in SEPARATOR_CHARS -> appendSeparator(character, operatorColor)
+                    is ExpressionToken.Separator -> appendSeparator(token.character, operatorColor)
 
-                    else -> append(character)
+                    is ExpressionToken.Other -> append(token.character)
                 }
             }
         }
@@ -166,6 +165,28 @@ fun ShadokLabelText(
         textAlign = TextAlign.End,
         modifier = modifier,
     )
+}
+
+/** Un caractère d'une expression, classé selon la façon dont il s'affiche. */
+internal sealed interface ExpressionToken {
+    /** Un chiffre Shadok, dessiné. */
+    data class Glyph(val digit: ShadokDigit) : ExpressionToken
+
+    /** Un opérateur ou une parenthèse, mis en valeur. */
+    data class Separator(val character: Char) : ExpressionToken
+
+    /** Tout le reste, écrit tel quel. */
+    data class Other(val character: Char) : ExpressionToken
+}
+
+/** Découpe une expression caractère par caractère : glyphe, séparateur, ou autre. */
+internal fun tokenize(expression: String): List<ExpressionToken> = expression.map { character ->
+    val digit = ShadokDigit.ofGlyphOrNull(character)
+    when {
+        digit != null -> ExpressionToken.Glyph(digit)
+        character in SEPARATOR_CHARS -> ExpressionToken.Separator(character)
+        else -> ExpressionToken.Other(character)
+    }
 }
 
 /** Un opérateur, coloré et entouré d'espaces fines. */

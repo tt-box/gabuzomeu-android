@@ -323,6 +323,50 @@ class SimpleSessionTest {
         assertEquals(Rational.of(-2), negated.pressing(Operator.PLUS).type("3").result())
     }
 
+    // ------------------------------------------------------- repos, collage, restauration
+
+    @Test
+    fun `la machine est au repos tant que rien n'est tape ni en attente`() {
+        assertTrue(SimpleSession().isPristine)
+        assertFalse(type("1").isPristine)
+        assertFalse(SimpleSession().pressing(Operator.PLUS).isPristine)
+        assertTrue(type("1").clear().isPristine)
+    }
+
+    @Test
+    fun `un separateur apres un resultat repart de zero`() {
+        val session = type("5").equalling().appendSeparator()
+
+        assertFalse(session.showingResult)
+        assertNull(session.accumulator)
+        assertEquals("0.", session.valueText())
+    }
+
+    @Test
+    fun `un nombre colle apres un resultat repart de zero`() {
+        val session = type("5").pressing(Operator.PLUS).type("2").equalling().appendNumber("9")
+
+        assertFalse(session.showingResult)
+        assertNull(session.accumulator)
+        assertNull(session.pending)
+        assertEquals("9", session.valueText())
+    }
+
+    @Test
+    fun `une operation en attente sans accumulateur restaure part de zero`() {
+        val restored = SimpleSession.restore(
+            entryKeys = "3",
+            accumulatorKeys = "",
+            pendingKeys = Operator.MINUS.symbol.toString(),
+            entryNegative = false,
+            notation = NumberNotation.DECIMAL,
+        )
+
+        assertNull(restored.accumulator)
+        assertEquals(Operator.MINUS, restored.pending)
+        assertEquals(Rational.of(-3), restored.result())
+    }
+
     // ------------------------------------------------------------------ utilitaires
 
     private fun type(digits: String): SimpleSession = SimpleSession().type(digits)

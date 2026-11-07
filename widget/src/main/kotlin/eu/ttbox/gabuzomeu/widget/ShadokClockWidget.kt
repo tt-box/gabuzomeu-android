@@ -223,24 +223,18 @@ private fun ShadokDate(
     palette: WidgetPalette,
 ) {
     // La date lisible sert aussi de description d'accessibilité : « ◿⅃/… » ne s'énonce pas.
-    val readable = DATE_PATTERN.withLocale(locale).format(date)
+    val readable = readableDate(date, locale)
+    val text = plainDateText(options.dateFormat, date, locale)
 
-    when (options.dateFormat) {
-        ClockDateFormat.NUMERIC -> DateText(
-            text = NUMERIC_DATE_PATTERN.withLocale(locale).format(date),
-            spoken = readable,
-            palette = palette,
-        )
-
-        ClockDateFormat.SHADOK -> ShadokDateLine(
+    if (text == null) {
+        ShadokDateLine(
             date = date,
             notation = options.notation,
             spoken = readable,
             palette = palette,
         )
-
-        // LONG et WEEKDAY_AND_LONG. NONE et WEEKDAY ne produisent jamais de ligne de date.
-        else -> DateText(text = readable, spoken = readable, palette = palette)
+    } else {
+        DateText(text = text, spoken = readable, palette = palette)
     }
 }
 
@@ -391,11 +385,29 @@ private fun ShadokTimeGlyphRow(
  * Le calcul part du pire cas plutôt que de l'heure courante : sinon l'heure changerait de
  * taille d'une minute à l'autre, ce qui sauterait aux yeux bien plus qu'un glyphe un peu petit.
  */
-private fun glyphSizeFor(availableWidth: Dp): Dp {
+internal fun glyphSizeFor(availableWidth: Dp): Dp {
     val usable = availableWidth.value - 2 * HORIZONTAL_PADDING.value
     val perGlyph = usable / (MAX_GLYPHS_PER_TIME + SEPARATOR_WIDTH_IN_GLYPHS)
     return perGlyph.coerceIn(MIN_GLYPH_SIZE.value, MAX_GLYPH_SIZE.value).dp
 }
+
+/** La date en clair : jour, mois en toutes lettres, année, dans la langue de [locale]. */
+internal fun readableDate(date: LocalDate, locale: Locale): String =
+    DATE_PATTERN.withLocale(locale).format(date)
+
+/**
+ * Le texte de la ligne de date, ou `null` quand elle se dessine en base 4
+ * ([ClockDateFormat.SHADOK]).
+ *
+ * `NONE` et `WEEKDAY` ne produisent jamais de ligne de date : le texte lisible est alors sans
+ * objet, mais c'est la même branche que `LONG` et `WEEKDAY_AND_LONG`.
+ */
+internal fun plainDateText(format: ClockDateFormat, date: LocalDate, locale: Locale): String? =
+    when (format) {
+        ClockDateFormat.NUMERIC -> NUMERIC_DATE_PATTERN.withLocale(locale).format(date)
+        ClockDateFormat.SHADOK -> null
+        else -> readableDate(date, locale)
+    }
 
 /** `23:59` = `BuBuMeu:MeuZoMeu` : trois chiffres de chaque côté, et jamais plus. */
 private const val MAX_GLYPHS_PER_TIME = 6
