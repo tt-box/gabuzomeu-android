@@ -31,6 +31,8 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                 warningsAsErrors = true
                 abortOnError = true
                 checkDependencies = true
+                // Versions plus récentes : laissées à Dependabot (voir le plugin application).
+                disable += setOf("GradleDependency", "AndroidGradlePluginVersion", "NewerVersionAvailable")
             }
         }
 
