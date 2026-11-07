@@ -6,13 +6,20 @@
 gradlew text eol=lf
 *.sh text eol=lf
 
-# Scripts Windows : CRLF.
-*.bat text eol=crlf
-*.cmd text eol=crlf
+# Scripts Windows : CRLF, stockés tels quels (-text), sans aucune conversion. Le wrapper
+# Gradle et Dependabot les écrivent en CRLF ; avec « text eol=crlf », le dépôt attendait
+# du LF et gradlew.bat apparaissait modifié à chaque checkout.
+*.bat -text
+*.cmd -text
 
 # Binaires : aucune conversion.
 *.jar binary
 *.png binary
+*.webp binary
+*.jpg binary
+*.gif binary
+*.zip binary
+*.p12 binary
 *.jks binary
 *.keystore binary
 *.ttf binary

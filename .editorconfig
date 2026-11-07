@@ -1,0 +1,12 @@
+# Fins de ligne et encodage appliqués par les IDE dès l'écriture ; .gitattributes les
+# garantit dans le dépôt. Volontairement minimal : ktlint lit aussi ce fichier, et la
+# mise en forme Kotlin reste réglée dans build.gradle.kts (Spotless).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.{bat,cmd}]
+end_of_line = crlf

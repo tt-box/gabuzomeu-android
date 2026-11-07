@@ -49,6 +49,18 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Garde-fou des fins de ligne : tout fichier commité doit déjà être dans la forme
+      # imposée par .gitattributes. Sinon il apparaîtrait « modifié » au checkout sous
+      # Windows (cas de gradlew.bat commité en CRLF par la mise à jour du wrapper).
+      - name: Fins de ligne conformes à .gitattributes
+        run: |
+          git add --renormalize .
+          if ! git diff --cached --quiet; then
+            echo "::error::Fins de ligne non normalisées : $(git diff --cached --name-only | tr '\n' ' ')"
+            echo "Corriger avec : git add --renormalize . && git commit"
+            exit 1
+          fi
+
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
