@@ -13,12 +13,26 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Jeton en lecture seule par défaut : seuls les jobs qui en ont besoin élargissent leurs
+# droits (le job `build` ajoute `id-token: write` pour Codecov). Sans cette clé, les jobs
+# héritaient des droits par défaut du dépôt, potentiellement en écriture.
+permissions:
+  contents: read
+
+# Sur une branche de travail ou une PR, seul le dernier push compte : on annule le run
+# précédent. Sur main en revanche, chaque fusion doit être validée pour elle-même —
+# deux fusions rapprochées ne doivent pas annuler la CI de la première.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Les actions sont toutes sur le runtime Node 24 (Node 20 est déprécié) : checkout v7,
-# setup-java v5, upload-artifact v7.
+# setup-java v6, upload-artifact v7.
+#
+# Chaque `uses:` est épinglé sur le SHA complet du commit, la version lisible en
+# commentaire : une étiquette (`v5`) est déplaçable, et ces actions s'exécutent avec le
+# jeton du workflow — voire, dans release.yml, à côté des secrets de signature.
+# Dependabot (écosystème github-actions) sait mettre à jour ces SHA et leur commentaire.
 #
 # `gradle/actions` s'arrête volontairement à **v5**, et ce n'est pas un oubli. La v6
 # extrait le cache dans un composant `gradle-actions-caching` **propriétaire**, régi par
@@ -33,19 +47,19 @@ jobs:
     name: Logique métier (JVM)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
       - name: Tests de :core:shadok et :core:eval
         run: ./gradlew :core:shadok:test :core:eval:test
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: rapports-tests-core
@@ -59,14 +73,14 @@ jobs:
       # Jeton OIDC pour Codecov : pas de secret à gérer, y compris sur les PR Dependabot.
       id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
       - name: Vérification du formatage
         run: ./gradlew spotlessCheck
@@ -85,13 +99,13 @@ jobs:
 
       # Un incident chez Codecov ne doit pas rendre la CI rouge — et donc bloquer
       # l'auto-merge des PR Dependabot.
-      - uses: codecov/codecov-action@v7
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
           files: build/reports/kover/report.xml
           fail_ci_if_error: false
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: rapports-lint
@@ -102,7 +116,7 @@ jobs:
       - name: APK release (non signé, vérifie que R8 ne casse rien)
         run: ./gradlew :app:assembleRelease
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: apk-release
           path: app/build/outputs/apk/release/*.apk
@@ -111,14 +125,14 @@ jobs:
     name: Tests instrumentés (émulateur API 31)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
 
       # L'accélération matérielle KVM est nécessaire pour que l'émulateur soit utilisable.
       - name: Activer KVM
@@ -129,7 +143,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Tests Compose et widget sur émulateur
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           # API 31 : notre minSdk, le plancher qu'il faut vérifier.
           api-level: 31
@@ -138,7 +152,7 @@ jobs:
           disable-animations: true
           script: ./gradlew :app:connectedDebugAndroidTest
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: rapports-tests-instrumentes

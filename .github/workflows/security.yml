@@ -25,14 +25,107 @@ jobs:
   osv-scanner:
     name: CVE (OSV-Scanner)
     runs-on: ubuntu-latest
+    outputs:
+      count: ${{ steps.count.outputs.count }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: google/osv-scanner-action/osv-scanner-action@v2.7.0
+      # Le scanner sort en erreur dès qu'il trouve une vulnérabilité : on le laisse
+      # finir pour compter les résultats et publier le badge, et c'est la dernière
+      # étape qui fait échouer le job. Le nom du job est une vérification obligatoire
+      # de main : ne pas le renommer.
+      - name: OSV-Scanner
+        id: osv
+        continue-on-error: true
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         with:
           scan-args: |-
+            --format=json
+            --output=osv-results.json
             --recursive
             ./
+
+      # Nombre de vulnérabilités distinctes : OSV regroupe sous un même « group » les
+      # identifiants alias d'une même faille (CVE, GHSA…), on compte donc les groupes.
+      - name: Compter les vulnérabilités
+        id: count
+        env:
+          OSV_OUTCOME: ${{ steps.osv.outcome }}
+        run: |
+          set -euo pipefail
+          if [ -s osv-results.json ]; then
+            n="$(jq '[.results[]?.packages[]?.groups[]?] | length' osv-results.json)"
+          elif [ "$OSV_OUTCOME" = success ]; then
+            n=0
+          else
+            # Ni rapport ni succès : le scanner a planté. Afficher « 0 » serait mentir.
+            echo "::error::OSV-Scanner a échoué sans produire de rapport"
+            exit 1
+          fi
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+          echo "Vulnérabilités distinctes : $n"
+          if [ "$n" -gt 0 ]; then
+            jq -r '.results[]?.packages[]? | "\(.package.name) \(.package.version) : \([.groups[]?.ids[0]] | join(", "))"' osv-results.json
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && hashFiles('osv-results.json') != ''
+        with:
+          name: osv-results
+          path: osv-results.json
+
+      # Une PR vulnérable doit rester bloquée : le job échoue après le comptage.
+      - name: Échouer si des vulnérabilités sont connues
+        env:
+          COUNT: ${{ steps.count.outputs.count }}
+        run: |
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::$COUNT vulnérabilité(s) connue(s) — détail dans l'étape « Compter les vulnérabilités »"
+            exit 1
+          fi
+
+  # Badge « CVE » du README : un fichier au format « endpoint » de shields.io, publié
+  # sur la branche orpheline `badges` et lu via raw.githubusercontent.com. Job séparé
+  # pour que le scanner, lui, garde un jeton en lecture seule : seul ce job, qui
+  # n'exécute aucune action tierce, peut écrire. Jamais sur une PR : le badge reflète
+  # main. Il est publié même (surtout) quand le scan a échoué sur des vulnérabilités.
+  cve-badge:
+    name: Badge CVE
+    needs: osv-scanner
+    if: always() && github.event_name != 'pull_request' && needs.osv-scanner.outputs.count != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publier cve.json sur la branche badges
+        env:
+          COUNT: ${{ needs.osv-scanner.outputs.count }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$COUNT" =~ ^[0-9]+$ ]] || { echo "::error::Compte invalide : $COUNT"; exit 1; }
+          if [ "$COUNT" -eq 0 ]; then color=brightgreen; else color=red; fi
+          git init -q -b badges badges && cd badges
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # Branche créée au premier passage (orpheline : aucun lien avec main), reprise ensuite.
+          if git ls-remote --exit-code --heads origin badges >/dev/null; then
+            git fetch -q --depth=1 origin badges
+            git reset -q --soft FETCH_HEAD
+            git checkout -q FETCH_HEAD -- .
+          fi
+          jq -n --arg n "$COUNT" --arg c "$color" \
+            '{schemaVersion: 1, label: "CVE", message: $n, color: $c}' > cve.json
+          git add cve.json
+          # On ne commite que si le badge change : pas d'historique bruité chaque lundi.
+          if git diff --cached --quiet; then
+            echo "Badge inchangé ($COUNT)"
+            exit 0
+          fi
+          git commit -q -m "badge: CVE = $COUNT"
+          git push -q origin HEAD:badges
+          echo "Badge publié : $COUNT"
 
   dependency-graph:
     name: Graphe de dépendances
@@ -42,11 +135,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/dependency-submission@v5
+      - uses: gradle/actions/dependency-submission@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2

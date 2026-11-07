@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/tt-box/gabuzomeu-android/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/ci.yml)
 [![Couverture](https://codecov.io/gh/tt-box/gabuzomeu-android/branch/main/graph/badge.svg)](https://codecov.io/gh/tt-box/gabuzomeu-android)
-[![CVE](https://github.com/tt-box/gabuzomeu-android/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/security.yml)
+[![CVE](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftt-box%2Fgabuzomeu-android%2Fbadges%2Fcve.json&logo=github)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/security.yml)
 [![Release](https://github.com/tt-box/gabuzomeu-android/actions/workflows/release.yml/badge.svg)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/release.yml)
 [![Dernière version](https://img.shields.io/github/v/release/tt-box/gabuzomeu-android?include_prereleases&sort=semver&label=version)](https://github.com/tt-box/gabuzomeu-android/releases)
 [![Dependabot](https://img.shields.io/badge/Dependabot-actif-025E8C?logo=dependabot)](https://github.com/tt-box/gabuzomeu-android/network/updates)
@@ -140,7 +140,16 @@ Quatre workflows GitHub Actions, dans `.github/workflows/` :
 | `ci.yml` | push sur `main`, chaque pull request | Tests JVM de la logique métier, puis `spotlessCheck`, `detekt`, `build` (compilation + lint + tests) et APK release. Un troisième job lance les tests instrumentés sur un émulateur API 31. |
 | `release.yml` | push d'un tag `1.2.3` / `v1.2.3` (reprise manuelle possible) | Rejoue toutes les vérifications, construit l'AAB et l'APK **signés**, plus un APK **non signé** (`-unsigned.apk`, à signer avec sa propre clé), et crée la release GitHub avec les artefacts et leurs empreintes SHA-256. |
 | `security.yml` | push sur `main`, chaque pull request, chaque lundi | OSV-Scanner contrôle les CVE connues des dépendances du catalogue (badge « CVE ») ; le graphe Gradle complet est soumis à GitHub pour les alertes Dependabot. |
-| `dependabot-automerge.yml` | PR ouverte par Dependabot | Arme l'auto-merge (squash) : la PR est fusionnée dès que les vérifications obligatoires sont vertes. |
+| `dependabot-automerge.yml` | PR ouverte par Dependabot | Arme l'auto-merge (squash) des seules mises à jour Gradle **patch** et **mineures** : la PR est fusionnée dès que les vérifications obligatoires sont vertes. |
+
+**Badge CVE** : il affiche le nombre de vulnérabilités distinctes trouvées par
+OSV-Scanner dans les dépendances du catalogue de versions (`gradle/libs.versions.toml`)
+— et non les alertes Dependabot sur l'outillage de build ; `security.yml` le publie
+(`cve.json`) sur la branche orpheline `badges` à chaque passage sur `main`.
+
+Toutes les actions sont épinglées par SHA de commit complet (version en commentaire,
+`# v7.0.1`) : une étiquette comme `v7` peut être déplacée. Dependabot met à jour SHA et
+commentaire ensemble.
 
 **Couverture** : [Kover](https://github.com/Kotlin/kotlinx-kover) instrumente les tests
 unitaires des quatre modules ; `./gradlew koverXmlReport` (ou `koverHtmlReport`) produit
@@ -148,8 +157,10 @@ le rapport agrégé dans `build/reports/kover/`, que la CI publie sur Codecov (v
 sans secret). Les tests instrumentés sur émulateur n'y sont pas comptés.
 
 **Dépendances** : Dependabot (`.github/dependabot.yml`) propose chaque lundi les mises à
-jour Gradle et GitHub Actions, regroupées par famille. Une fois la CI verte, la PR est
-fusionnée automatiquement. Cela suppose, dans les réglages du dépôt :
+jour Gradle et GitHub Actions, regroupées par famille. Une fois la CI verte, une mise à
+jour Gradle patch ou mineure est fusionnée automatiquement ; les versions majeures (une
+seule suffit dans une PR groupée) et toutes les PR GitHub Actions restent en attente
+d'une relecture manuelle. Cela suppose, dans les réglages du dépôt :
 
 - *Settings ▸ General ▸ Allow auto-merge* coché ;
 - une règle de protection de `main` exigeant les vérifications `Logique métier (JVM)`,
@@ -165,7 +176,12 @@ git push origin v1.0.0
 ```
 
 Le tag pilote le numéro de version : `v1.2.3` produit un artefact `1.2.3`. Le
-`versionCode`, lui, est le nombre de commits — monotone par construction.
+`versionCode` en est dérivé : `MAJEUR×1 000 000 + MINEUR×10 000 + PATCH×100 + rang`, où
+le rang est le numéro de pré-version (`2.0.0-RC3` → 3, de 0 à 98) et vaut 99 pour la
+version définitive (`2.0.0` → 2000099, après toutes ses candidates). Mineur et patch
+sont donc limités à 99. Seul le numéro de pré-version compte, pas son libellé :
+numéroter les pré-versions d'une même version de façon croissante. Une reprise manuelle
+(`workflow_dispatch`) n'accepte qu'un tag de version existant.
 
 Secrets à définir dans les paramètres du dépôt pour que la release soit signée
 (`Settings ▸ Secrets and variables ▸ Actions`) :
