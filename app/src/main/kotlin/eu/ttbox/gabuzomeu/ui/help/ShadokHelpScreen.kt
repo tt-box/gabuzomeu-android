@@ -1,6 +1,8 @@
 package eu.ttbox.gabuzomeu.ui.help
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -133,7 +135,15 @@ private fun VideoLink() {
             // que la marge fait partie de la cible.
             modifier = Modifier
                 .clickable {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, SOURCE_VIDEO_URL.toUri()))
+                    // Il n'y a pas toujours une application pour l'ouvrir : appareil sans
+                    // navigateur, profil restreint, navigateur désactivé. Sans ce garde-fou,
+                    // toucher le lien ferait planter l'aide ; on le dit plutôt.
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, SOURCE_VIDEO_URL.toUri()))
+                    } catch (_: ActivityNotFoundException) {
+                        Toast.makeText(context, R.string.help_video_unavailable, Toast.LENGTH_SHORT)
+                            .show()
+                    }
                 }
                 .padding(16.dp)
                 .testTag(HelpTags.VIDEO),

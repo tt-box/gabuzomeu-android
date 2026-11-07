@@ -28,11 +28,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import eu.ttbox.gabuzomeu.R
@@ -40,23 +45,6 @@ import eu.ttbox.gabuzomeu.ui.GameTags
 import eu.ttbox.gabuzomeu.ui.shadok.ShadokGlyphText
 import eu.ttbox.gabuzomeu.ui.theme.DisplayTypography
 import kotlin.random.Random
-
-/**
- * L'état d'une partie. Immuable, comme le reste du projet : chaque réponse en produit un nouveau.
- *
- * @property mastery le nombre de bonnes réponses, qui pilote la difficulté. Distinct de [score]
- *   à dessein — ils sont égaux aujourd'hui, mais l'un est une règle de jeu et l'autre un
- *   affichage, et les confondre interdirait de changer l'un sans l'autre.
- */
-private data class QuizGame(
-    val question: QuizQuestion,
-    val score: Int = 0,
-    val asked: Int = 0,
-    val streak: Int = 0,
-    /** La réponse donnée, ou `null` tant que la question est ouverte. */
-    val answered: Int? = null,
-    val mastery: Int = 0,
-)
 
 /**
  * Le jeu : reconnaître les nombres Shadok.
@@ -73,10 +61,14 @@ private data class QuizGame(
 fun ShadokQuizScreen(onClose: () -> Unit, modifier: Modifier = Modifier) {
     BackHandler(onBack = onClose)
 
-    // Le tirage n'est pas mémorisé entre deux ouvertures : chaque partie repart à zéro, ce qui
-    // évite de conserver un score dont personne n'a demandé la persistance.
+    // La partie survit à la rotation, au changement de thème ou de langue et à la mort du
+    // processus — perdre son score en tournant le téléphone serait une punition. Elle n'est en
+    // revanche pas mémorisée entre deux ouvertures : chaque partie repart à zéro, ce qui évite
+    // de conserver un score dont personne n'a demandé la persistance.
     val random = remember { Random.Default }
-    var game by remember { mutableStateOf(QuizGame(ShadokQuiz.nextQuestion(random, mastery = 0))) }
+    var game by rememberSaveable(stateSaver = QuizGameSaver) {
+        mutableStateOf(QuizGame(ShadokQuiz.nextQuestion(random, mastery = 0)))
+    }
 
     Scaffold(
         modifier = modifier
@@ -200,14 +192,14 @@ private fun ChoiceButton(game: QuizGame, index: Int, choice: Int, onChoose: (Int
     // Après la réponse, la bonne se met en valeur et le mauvais choix se signale — les deux à
     // la fois, sinon on apprend qu'on s'est trompé sans apprendre la bonne réponse.
     val colors = when {
-        revealed && choice == question.answer -> ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
+        revealed && choice == question.answer -> revealColors(
+            container = MaterialTheme.colorScheme.primary,
+            content = MaterialTheme.colorScheme.onPrimary,
         )
 
-        revealed && choice == game.answered -> ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        revealed && choice == game.answered -> revealColors(
+            container = MaterialTheme.colorScheme.errorContainer,
+            content = MaterialTheme.colorScheme.onErrorContainer,
         )
 
         else -> ButtonDefaults.buttonColors(
@@ -251,6 +243,21 @@ private fun ChoiceButton(game: QuizGame, index: Int, choice: Int, onChoose: (Int
 }
 
 /**
+ * Les couleurs d'un choix révélé.
+ *
+ * Elles valent **aussi pour l'état désactivé** : le bouton est verrouillé dès la réponse, et
+ * sans cela Material le repeindrait en gris désactivé — la bonne réponse ne se distinguerait
+ * plus des autres, ce qui ôterait au retour tout son intérêt.
+ */
+@Composable
+private fun revealColors(container: Color, content: Color) = ButtonDefaults.buttonColors(
+    containerColor = container,
+    contentColor = content,
+    disabledContainerColor = container,
+    disabledContentColor = content,
+)
+
+/**
  * Le verdict, et le bouton pour continuer.
  *
  * Il occupe la place même quand il n'y a rien à dire : sans cela, les boutons de réponse
@@ -277,6 +284,9 @@ private fun Verdict(game: QuizGame, onNext: () -> Unit) {
                 stringResource(R.string.game_wrong, ShadokQuiz.labelsOf(game.question.answer))
             },
             style = MaterialTheme.typography.titleMedium,
+            // Annoncé dès qu'il paraît : sans région « live », TalkBack resterait muet et
+            // l'on ne saurait pas, sans voir, si l'on a eu juste.
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             color = if (correct) {
                 MaterialTheme.colorScheme.primary
             } else {
@@ -286,25 +296,6 @@ private fun Verdict(game: QuizGame, onNext: () -> Unit) {
         TextButton(onClick = onNext) { Text(stringResource(R.string.game_next)) }
     }
 }
-
-/** Enregistre une réponse. La question reste, avec son verdict. */
-private fun QuizGame.answering(chosen: Int): QuizGame {
-    if (answered != null) return this
-    val correct = chosen == question.answer
-    return copy(
-        answered = chosen,
-        asked = asked + 1,
-        score = if (correct) score + 1 else score,
-        // La série se casse net ; la maîtrise, elle, ne régresse pas — se tromper redonne une
-        // chance au même palier plutôt que de renvoyer en arrière.
-        streak = if (correct) streak + 1 else 0,
-        mastery = if (correct) mastery + 1 else mastery,
-    )
-}
-
-/** Passe à la question suivante, au palier atteint. */
-private fun QuizGame.nextRound(random: Random): QuizGame =
-    copy(question = ShadokQuiz.nextQuestion(random, mastery), answered = null)
 
 private val GLYPH_LINE_HEIGHT = 56.dp
 private val VERDICT_HEIGHT = 72.dp
