@@ -113,7 +113,6 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.turbine)
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

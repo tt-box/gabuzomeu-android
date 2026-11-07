@@ -30,7 +30,6 @@ updates:
       test:
         patterns:
           - "org.junit*"
-          - "app.cash.turbine*"
           - "org.jetbrains.kotlinx:kotlinx-coroutines-test"
       outillage:
         patterns:

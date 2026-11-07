@@ -14,7 +14,6 @@ dependencies {
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.glance.appwidget)
-    implementation(libs.glance.material3)
     // goAsync() dans le receiver : le rendu Glance est suspendu.
     implementation(libs.kotlinx.coroutines.android)
 
