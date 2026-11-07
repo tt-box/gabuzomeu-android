@@ -23,7 +23,7 @@ import eu.ttbox.gabuzomeu.core.eval.Rendered
 import eu.ttbox.gabuzomeu.core.eval.RpnOutcome
 import eu.ttbox.gabuzomeu.core.eval.RpnSession
 import eu.ttbox.gabuzomeu.core.eval.SimpleSession
-import eu.ttbox.gabuzomeu.core.shadok.ShadokFormatter
+import eu.ttbox.gabuzomeu.core.shadok.Rational
 import eu.ttbox.gabuzomeu.data.CalculatorPreferences
 import eu.ttbox.gabuzomeu.data.DisplaySettings
 import eu.ttbox.gabuzomeu.data.SessionStore
@@ -212,9 +212,12 @@ class CalculatorViewModel(
     /**
      * Insère un nombre venu du presse-papiers.
      *
-     * Le collage ne pose **aucun état nouveau** : il rejoue `appendDigit` / `appendSeparator`
-     * caractère par caractère, exactement comme la restauration d'une session persistée. Un
-     * tampon invalide ne peut donc pas naître d'un texte arbitraire.
+     * Les chiffres collés repassent par `appendDigit` / `appendSeparator`, exactement comme
+     * la restauration d'une session persistée : un tampon invalide ne peut donc pas naître
+     * d'un texte arbitraire. Quand ces chiffres ne sont qu'une écriture approchée — 0.7
+     * décimal collé sur le pavé Shadok —, le nombre porte en plus sa **valeur exacte**, et
+     * l'afficheur la signale d'un `≈`. Rejouer les seules touches tronquait la valeur en
+     * silence : rebasculer en décimal ne redonnait pas 0.7.
      *
      * Un texte illisible est ignoré sans bruit. L'interface ne grise « Coller » que si le
      * presse-papiers ne contient pas de texte du tout : lire son contenu pour l'analyser
@@ -236,13 +239,7 @@ class CalculatorViewModel(
 
     /** Le collage démarre une frappe, comme si les chiffres avaient été tapés. */
     private fun pasteIntoSimple(pasted: PastedNumber) {
-        pasted.keys.forEach { key ->
-            simple = if (key == ShadokFormatter.SEPARATOR) {
-                simple.appendSeparator()
-            } else {
-                simple.appendDigit(key)
-            }
-        }
+        simple = simple.appendNumber(pasted.keys, pasted.exactMagnitude)
         // Après les chiffres, comme en NPI : `negate` porte le signe de la frappe en cours.
         // Le pavé n'a pas de ±, mais un nombre collé négatif ne doit pas perdre son signe.
         if (pasted.negative) simple = simple.negate()
@@ -255,30 +252,22 @@ class CalculatorViewModel(
         // tampon l'acceptera ou le refusera selon ses propres règles — « 6−» collé après
         // « 2× » donne « 2×−6 », et un moins en tête d'expression est licite.
         if (pasted.negative) buffer = buffer.appendOperator(Operator.MINUS)
-        buffer = replayInto(buffer, pasted.keys)
+        buffer = buffer.appendNumber(pasted.keys, pasted.exactMagnitude)
     }
 
     private fun pasteIntoRpn(pasted: PastedNumber) {
-        pasted.keys.forEach { key ->
-            rpn = if (key == ShadokFormatter.SEPARATOR) {
-                rpn.appendSeparator()
-            } else {
-                rpn.appendDigit(key)
-            }
-        }
+        rpn = rpn.appendNumber(pasted.keys, pasted.exactMagnitude)
         // Après les chiffres : `negate` bascule le signe de la frappe en cours, alors qu'avant
         // eux il aurait changé celui du sommet de pile.
         if (pasted.negative) rpn = rpn.negate()
     }
 
-    private fun replayInto(target: ExpressionBuffer, keys: String): ExpressionBuffer =
-        keys.fold(target) { buffer, key ->
-            if (key == ShadokFormatter.SEPARATOR) {
-                buffer.appendSeparator()
-            } else {
-                buffer.appendDigit(key)
-            }
-        }
+    /**
+     * La valeur à porter à côté des chiffres collés, sans signe — il est appliqué à part.
+     * `null` quand les chiffres la redonnent exactement : une frappe ordinaire suffit.
+     */
+    private val PastedNumber.exactMagnitude: Rational?
+        get() = value.abs().takeIf { approximate }
 
     fun onNotationChange(notation: NumberNotation) {
         if (!sessionLoaded) notationChosenEarly = notation
@@ -538,38 +527,43 @@ class CalculatorViewModel(
 
     private fun storedSession(): StoredSession = StoredSession(
         keys = buffer.replayKeys(),
+        exact = buffer.exactKeys(),
         notation = buffer.notation,
         mode = mode,
         rpn = StoredRpn(
             stack = rpn.stack.keys(),
             entry = rpn.entryKeys(),
             entryNegative = rpn.entryNegative,
+            entryExact = rpn.entryExactKeys(),
         ),
         simple = StoredSimple(
             entry = simple.entryKeys(),
             accumulator = simple.accumulatorKeys(),
             pending = simple.pendingKeys(),
             entryNegative = simple.entryNegative,
+            entryExact = simple.entryExactKeys(),
         ),
         showingResult = showingResult,
         decimalApproximate = decimalApproximate,
     )
 
     private fun restore(session: StoredSession) {
-        buffer = ExpressionBuffer.replay(session.keys, session.notation)
+        // Les valeurs exactes reviennent avec les chiffres : sans elles, un tiers repris d'un
+        // résultat, ou 0.7 collé en Shadok, revenait tronqué à ses chiffres affichés.
+        buffer = ExpressionBuffer.replay(session.keys, session.notation, session.exact)
         rpn = RpnSession.restore(
             stackKeys = session.rpn.stack,
             entryKeys = session.rpn.entry,
             entryNegative = session.rpn.entryNegative,
             notation = session.notation,
-        )
+        ).withEntryExactKeys(session.rpn.entryExact)
         simple = SimpleSession.restore(
             entryKeys = session.simple.entry,
             accumulatorKeys = session.simple.accumulator,
             pendingKeys = session.simple.pending,
             entryNegative = session.simple.entryNegative,
             notation = session.notation,
-        )
+        ).withEntryExactKeys(session.simple.entryExact)
         mode = session.mode
         // Persistés : sans eux, un chiffre tapé après `2+3=` et une mort du processus
         // prolongeait le résultat au lieu de repartir de zéro.
@@ -581,12 +575,15 @@ class CalculatorViewModel(
 
     private fun saveInstanceState(session: StoredSession) {
         savedStateHandle[STATE_KEYS] = session.keys
+        savedStateHandle[STATE_EXACT] = session.exact
         savedStateHandle[STATE_NOTATION] = session.notation.name
         savedStateHandle[STATE_MODE] = session.mode.name
         savedStateHandle[STATE_RPN_STACK] = session.rpn.stack
         savedStateHandle[STATE_RPN_ENTRY] = session.rpn.entry
         savedStateHandle[STATE_RPN_NEGATIVE] = session.rpn.entryNegative
+        savedStateHandle[STATE_RPN_EXACT] = session.rpn.entryExact
         savedStateHandle[STATE_SIMPLE_ENTRY] = session.simple.entry
+        savedStateHandle[STATE_SIMPLE_EXACT] = session.simple.entryExact
         savedStateHandle[STATE_SIMPLE_ACCUMULATOR] = session.simple.accumulator
         savedStateHandle[STATE_SIMPLE_PENDING] = session.simple.pending
         savedStateHandle[STATE_SIMPLE_NEGATIVE] = session.simple.entryNegative
@@ -599,18 +596,23 @@ class CalculatorViewModel(
         val keys = savedStateHandle.get<String>(STATE_KEYS) ?: return null
         return StoredSession(
             keys = keys,
+            // Absentes d'un état sauvé par une version antérieure : les nombres repartent
+            // alors de leurs chiffres, comme dans cette version.
+            exact = savedStateHandle.get<String>(STATE_EXACT).orEmpty(),
             notation = enumNamed(savedStateHandle[STATE_NOTATION], NumberNotation.DECIMAL),
             mode = enumNamed(savedStateHandle[STATE_MODE], CalculationMode.CLASSIC),
             rpn = StoredRpn(
                 stack = savedStateHandle.get<String>(STATE_RPN_STACK).orEmpty(),
                 entry = savedStateHandle.get<String>(STATE_RPN_ENTRY).orEmpty(),
                 entryNegative = savedStateHandle.get<Boolean>(STATE_RPN_NEGATIVE) == true,
+                entryExact = savedStateHandle.get<String>(STATE_RPN_EXACT).orEmpty(),
             ),
             simple = StoredSimple(
                 entry = savedStateHandle.get<String>(STATE_SIMPLE_ENTRY).orEmpty(),
                 accumulator = savedStateHandle.get<String>(STATE_SIMPLE_ACCUMULATOR).orEmpty(),
                 pending = savedStateHandle.get<String>(STATE_SIMPLE_PENDING).orEmpty(),
                 entryNegative = savedStateHandle.get<Boolean>(STATE_SIMPLE_NEGATIVE) == true,
+                entryExact = savedStateHandle.get<String>(STATE_SIMPLE_EXACT).orEmpty(),
             ),
             showingResult = savedStateHandle.get<Boolean>(STATE_SHOWING_RESULT) == true,
             decimalApproximate = savedStateHandle.get<Boolean>(STATE_DECIMAL_APPROXIMATE) == true,
@@ -628,6 +630,9 @@ class CalculatorViewModel(
 
     companion object {
         private const val STATE_KEYS = "expression-keys"
+        private const val STATE_EXACT = "expression-exact"
+        private const val STATE_RPN_EXACT = "rpn-entry-exact"
+        private const val STATE_SIMPLE_EXACT = "simple-entry-exact"
         private const val STATE_NOTATION = "expression-notation"
         private const val STATE_MODE = "calculation-mode"
         private const val STATE_RPN_STACK = "rpn-stack"

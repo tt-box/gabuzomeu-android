@@ -70,6 +70,9 @@ class CalculatorPreferences internal constructor(private val dataStore: DataStor
     override val session: Flow<StoredSession> = data.map { preferences ->
         StoredSession(
             keys = preferences[KEY_EXPRESSION].orEmpty(),
+            // Absentes des sessions écrites par une version antérieure : les nombres
+            // repartent alors de leurs chiffres, ce que faisaient ces versions.
+            exact = preferences[KEY_EXPRESSION_EXACT].orEmpty(),
             notation = preferences[KEY_NOTATION]
                 ?.let { stored -> NumberNotation.entries.firstOrNull { it.name == stored } }
                 ?: NumberNotation.DECIMAL,
@@ -80,12 +83,14 @@ class CalculatorPreferences internal constructor(private val dataStore: DataStor
                 stack = preferences[KEY_RPN_STACK].orEmpty(),
                 entry = preferences[KEY_RPN_ENTRY].orEmpty(),
                 entryNegative = preferences[KEY_RPN_NEGATIVE] == true,
+                entryExact = preferences[KEY_RPN_EXACT].orEmpty(),
             ),
             simple = StoredSimple(
                 entry = preferences[KEY_SIMPLE_ENTRY].orEmpty(),
                 accumulator = preferences[KEY_SIMPLE_ACCUMULATOR].orEmpty(),
                 pending = preferences[KEY_SIMPLE_PENDING].orEmpty(),
                 entryNegative = preferences[KEY_SIMPLE_NEGATIVE] == true,
+                entryExact = preferences[KEY_SIMPLE_EXACT].orEmpty(),
             ),
             // Absentes des sessions écrites par une version antérieure : `false`, soit une
             // saisie en cours, ce qui était justement le comportement de ces versions.
@@ -105,12 +110,15 @@ class CalculatorPreferences internal constructor(private val dataStore: DataStor
     override suspend fun save(session: StoredSession) {
         editIgnoringIoErrors { preferences ->
             preferences[KEY_EXPRESSION] = session.keys
+            preferences[KEY_EXPRESSION_EXACT] = session.exact
             preferences[KEY_NOTATION] = session.notation.name
             preferences[KEY_MODE] = session.mode.name
             preferences[KEY_RPN_STACK] = session.rpn.stack
             preferences[KEY_RPN_ENTRY] = session.rpn.entry
             preferences[KEY_RPN_NEGATIVE] = session.rpn.entryNegative
+            preferences[KEY_RPN_EXACT] = session.rpn.entryExact
             preferences[KEY_SIMPLE_ENTRY] = session.simple.entry
+            preferences[KEY_SIMPLE_EXACT] = session.simple.entryExact
             preferences[KEY_SIMPLE_ACCUMULATOR] = session.simple.accumulator
             preferences[KEY_SIMPLE_PENDING] = session.simple.pending
             preferences[KEY_SIMPLE_NEGATIVE] = session.simple.entryNegative
@@ -144,6 +152,9 @@ class CalculatorPreferences internal constructor(private val dataStore: DataStor
 
     private companion object {
         val KEY_EXPRESSION = stringPreferencesKey("expression")
+        val KEY_EXPRESSION_EXACT = stringPreferencesKey("expression-exact")
+        val KEY_RPN_EXACT = stringPreferencesKey("rpn-entry-exact")
+        val KEY_SIMPLE_EXACT = stringPreferencesKey("simple-entry-exact")
         val KEY_NOTATION = stringPreferencesKey("notation")
         val KEY_MODE = stringPreferencesKey("calculation-mode")
         val KEY_RPN_STACK = stringPreferencesKey("rpn-stack")

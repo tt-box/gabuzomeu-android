@@ -1,5 +1,6 @@
 package eu.ttbox.gabuzomeu.core.eval
 
+import eu.ttbox.gabuzomeu.core.shadok.Rational
 import eu.ttbox.gabuzomeu.core.shadok.ShadokDigit
 import eu.ttbox.gabuzomeu.core.shadok.ShadokFormatter
 import eu.ttbox.gabuzomeu.core.shadok.ShadokNotation
@@ -94,6 +95,33 @@ data class ExpressionBuffer(
             // « .5 » s'écrit « 0.5 » : on matérialise le zéro de tête.
             append(Atom.Number(notation, "$zeroDigit${ShadokFormatter.SEPARATOR}"))
         }
+    }
+
+    /**
+     * Insère un nombre d'un bloc — un collage —, avec sa valeur exacte éventuelle.
+     *
+     * Sans [exact], c'est exactement la frappe de [digits], chiffre par chiffre : le collage
+     * prolonge le nombre en cours comme si l'utilisateur l'avait tapé.
+     *
+     * Avec [exact], [digits] n'est qu'une écriture approchée de la valeur — 0.7 décimal collé
+     * sur le pavé Shadok, qui n'a pas d'écriture finie en base 4. Le nombre **remplace** alors
+     * celui qui était en cours de frappe : accoler des chiffres à une valeur exacte n'aurait
+     * aucun sens, et rejouer les touches tronquait la valeur sans le dire.
+     *
+     * Les chiffres repassent quand même par [appendDigit] : un texte que le pavé ne sait pas
+     * taper ne produit pas de nombre, et le tampon reste inchangé.
+     *
+     * @param exact la valeur, **sans signe** : les chiffres n'en ont pas. Une valeur négative
+     *   est ignorée plutôt que de contredire les chiffres affichés.
+     */
+    fun appendNumber(digits: String, exact: Rational? = null): ExpressionBuffer {
+        if (exact == null) return digits.fold(this) { buffer, key -> buffer.appendKey(key) }
+        if (lastAtom is Atom.RightParen) return this
+
+        val typed = digits.fold(ExpressionBuffer(notation)) { buffer, key -> buffer.appendKey(key) }
+        val number = typed.atoms.singleOrNull() as? Atom.Number ?: return this
+        val carried = number.withExact(exact)
+        return if (lastAtom is Atom.Number) replaceLast(carried) else append(carried)
     }
 
     /**
@@ -201,6 +229,50 @@ data class ExpressionBuffer(
         NumberNotation.SHADOK -> render(ExpressionDisplay.SHADOK_GLYPHS).text
     }
 
+    /**
+     * Les valeurs exactes des nombres, à persister à côté de [replayKeys].
+     *
+     * La frappe ne restitue que les chiffres affichés : sans ces valeurs, un tiers repris d'un
+     * résultat, ou 0.7 collé en Shadok, revenait tronqué après une mort du processus.
+     *
+     * Une entrée par nombre, dans l'ordre, en fraction (`"1/3"`), vide pour un nombre dont
+     * les chiffres sont la valeur ; séparées par `;`. Chaîne vide si aucun nombre ne porte de
+     * valeur exacte — le cas courant, et la forme des sessions écrites avant ce champ.
+     */
+    fun exactKeys(): String {
+        val numbers = atoms.filterIsInstance<Atom.Number>()
+        if (numbers.none { it.exact != null }) return ""
+        return numbers.joinToString(separator = EXACT_SEPARATOR.toString()) {
+            it.exact?.toString().orEmpty()
+        }
+    }
+
+    /**
+     * Rend à chaque nombre la valeur exacte persistée par [exactKeys].
+     *
+     * Une valeur illisible, de dénominateur nul ou négative est ignorée : le nombre repart
+     * alors de ses chiffres, comme une session écrite avant ce champ. Un nombre d'entrées
+     * qui ne correspond pas aux nombres du tampon trahit une donnée abîmée — aucune n'est
+     * appliquée, plutôt que d'attribuer une valeur au mauvais nombre.
+     */
+    fun withExactKeys(exactKeys: String): ExpressionBuffer {
+        if (exactKeys.isEmpty()) return this
+        val entries = exactKeys.split(EXACT_SEPARATOR)
+        if (entries.size != atoms.count { it is Atom.Number }) return this
+
+        var index = 0
+        return copy(
+            atoms = atoms.map { atom ->
+                if (atom !is Atom.Number) {
+                    atom
+                } else {
+                    val stored = Rational.parseOrNull(entries[index++])
+                    if (stored == null) atom else atom.withExact(stored)
+                }
+            },
+        )
+    }
+
     fun render(display: ExpressionDisplay): Rendered {
         var approximate = false
         val text = buildString {
@@ -235,6 +307,10 @@ data class ExpressionBuffer(
         NumberNotation.SHADOK -> ShadokDigit.isGlyph(digit)
     }
 
+    /** Un caractère de chiffre ou le séparateur — ce qu'un nombre collé contient. */
+    private fun appendKey(key: Char): ExpressionBuffer =
+        if (key == ShadokFormatter.SEPARATOR) appendSeparator() else appendDigit(key)
+
     private fun append(atom: Atom): ExpressionBuffer = copy(atoms = atoms + atom)
 
     private fun replaceLast(atom: Atom): ExpressionBuffer = copy(atoms = atoms.dropLast(1) + atom)
@@ -248,11 +324,30 @@ data class ExpressionBuffer(
          * `append*` que la frappe, **aucun tampon invalide ne peut être reconstruit**
          * depuis des données stockées. Le code d'origine, lui, désérialisait un format
          * binaire maison (`Persist.java`) dont les contrôles de version étaient inversés.
+         *
+         * @param exactKeys les valeurs exactes écrites par [exactKeys] ; vide pour une
+         *   session antérieure à ce champ, dont les nombres repartent de leurs chiffres.
          */
         fun replay(
             keys: String,
             notation: NumberNotation = NumberNotation.DECIMAL,
-        ): ExpressionBuffer {
+            exactKeys: String = "",
+        ): ExpressionBuffer = replayTyping(keys, notation).withExactKeys(exactKeys)
+
+        /** Séparateur des valeurs exactes de [exactKeys] : absent des fractions. */
+        private const val EXACT_SEPARATOR = ';'
+
+        /**
+         * Attache [exact] à ce nombre, s'il apporte quelque chose : une valeur négative
+         * contredirait des chiffres sans signe, et une valeur que les chiffres redonnent
+         * déjà n'a pas à être portée en double.
+         */
+        private fun Atom.Number.withExact(exact: Rational): Atom.Number {
+            val plain = copy(exact = null)
+            return if (exact.signum() < 0 || plain.value() == exact) plain else copy(exact = exact)
+        }
+
+        private fun replayTyping(keys: String, notation: NumberNotation): ExpressionBuffer {
             var buffer = ExpressionBuffer(notation)
             keys.forEach { key ->
                 buffer = when {

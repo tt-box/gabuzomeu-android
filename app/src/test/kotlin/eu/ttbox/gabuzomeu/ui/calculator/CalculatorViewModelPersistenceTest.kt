@@ -167,6 +167,82 @@ class CalculatorViewModelPersistenceTest {
         assertEquals(0, store.saveCount)
     }
 
+    // ------------------------------------------------------------ valeurs exactes
+
+    private fun CalculatorViewModel.oneThirdEquals() {
+        onKey(KeyAction.Digit('1'))
+        onKey(KeyAction.Op(Operator.DIVIDE))
+        onKey(KeyAction.Digit('3'))
+        onKey(KeyAction.Evaluate)
+    }
+
+    /** `×3=` sur la valeur restaurée : 1 si le tiers est exact, 0.99999… s'il est tronqué. */
+    private fun CalculatorViewModel.timesThreeEquals(): String {
+        onKey(KeyAction.Op(Operator.TIMES))
+        onKey(KeyAction.Digit('3'))
+        onKey(KeyAction.Evaluate)
+        return uiState.value.decimal
+    }
+
+    @Test
+    fun `un tiers repris d'un resultat reste exact apres mort du processus`() = runTest {
+        val savedState = SavedStateHandle()
+        viewModel(savedState).oneThirdEquals()
+
+        assertEquals("1", viewModel(savedState).timesThreeEquals())
+    }
+
+    @Test
+    fun `un tiers repris d'un resultat reste exact apres un redemarrage a froid`() = runTest {
+        viewModel().oneThirdEquals()
+        advanceUntilIdle()
+        assertEquals("1/3", store.saved.value.exact)
+
+        val restored = viewModel()
+        advanceUntilIdle()
+
+        assertEquals("1", restored.timesThreeEquals())
+    }
+
+    @Test
+    fun `un collage inexact en NPI et en Simple survit a la mort du processus`() = runTest {
+        listOf(CalculationMode.RPN, CalculationMode.SIMPLE).forEach { mode ->
+            val savedState = SavedStateHandle()
+            viewModel(savedState).apply {
+                onModeChange(mode)
+                onNotationChange(NumberNotation.SHADOK)
+                onPaste("0.7")
+            }
+
+            val restored = viewModel(savedState)
+            restored.onNotationChange(NumberNotation.DECIMAL)
+
+            assertEquals("0.7", restored.uiState.value.decimal, "en $mode")
+        }
+    }
+
+    @Test
+    fun `une session ancienne sans valeurs exactes se charge depuis ses chiffres`() = runTest {
+        store.saved.value = StoredSession(keys = "0.5", showingResult = true)
+
+        val model = viewModel()
+        advanceUntilIdle()
+
+        assertEquals("0.5", model.uiState.value.decimal)
+        assertEquals("1.5", model.timesThreeEquals())
+    }
+
+    @Test
+    fun `une valeur exacte persistee invalide est ignoree`() = runTest {
+        // Dénominateur nul : le nombre repart de ses chiffres, sans planter.
+        store.saved.value = StoredSession(keys = "0.5", exact = "1/0")
+
+        val model = viewModel()
+        advanceUntilIdle()
+
+        assertEquals("1.5", model.timesThreeEquals())
+    }
+
     private companion object {
         /** Moins que les 300 ms de l'anti-rebond : l'ecriture n'est pas encore partie. */
         const val PERSIST_DELAY_BEFORE_DEBOUNCE_MS = 100L

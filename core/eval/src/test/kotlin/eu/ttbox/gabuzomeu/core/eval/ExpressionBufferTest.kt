@@ -1,6 +1,8 @@
 package eu.ttbox.gabuzomeu.core.eval
 
 import eu.ttbox.gabuzomeu.core.shadok.Rational
+import eu.ttbox.gabuzomeu.core.shadok.ShadokFormatter
+import eu.ttbox.gabuzomeu.core.shadok.ShadokNotation
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -306,6 +308,78 @@ class ExpressionBufferTest {
             EvalResult.Success(Rational.ofDecimal("0.331")),
             Evaluator.evaluate(buffer.appendDigit('1')),
         )
+    }
+
+    // ------------------------------------------------ collage d'une valeur exacte
+
+    @Test
+    fun `un nombre colle avec sa valeur exacte la garde en rebasculant`() {
+        val seven = Rational.ofDecimal("0.7")
+        val glyphs = Atom.Number(NumberNotation.DECIMAL, "0.7").toBase4()
+            .let { ShadokFormatter.format(it, ShadokNotation.GLYPHS, markApproximation = false) }
+
+        val pasted = ExpressionBuffer(NumberNotation.SHADOK).appendNumber(glyphs, seven)
+
+        assertTrue(pasted.render(ExpressionDisplay.SHADOK_GLYPHS).approximate)
+        assertEquals(EvalResult.Success(seven), Evaluator.evaluate(pasted))
+        assertEquals("0.7", decimalOf(pasted.withNotation(NumberNotation.DECIMAL)))
+    }
+
+    @Test
+    fun `un nombre colle avec sa valeur exacte remplace la frappe en cours`() {
+        val third = Rational.of(1) / Rational.of(3)
+
+        val pasted = type("2+5").appendNumber("0.33", third)
+
+        assertEquals("2+0.33", decimalOf(pasted))
+        assertEquals(
+            EvalResult.Success(Rational.of(7) / Rational.of(3)),
+            Evaluator.evaluate(pasted),
+        )
+    }
+
+    @Test
+    fun `un nombre colle sans valeur exacte se tape comme au clavier`() {
+        assertEquals("57", decimalOf(type("5").appendNumber("7")))
+    }
+
+    // ------------------------------------------------ persistance des valeurs exactes
+
+    @Test
+    fun `les valeurs exactes survivent a la persistance`() {
+        val third = Rational.of(1) / Rational.of(3)
+        val buffer = type("2+").appendNumber(third.toDecimalString(), third)
+
+        assertEquals(";1/3", buffer.exactKeys())
+        val restored = ExpressionBuffer.replay(
+            buffer.replayKeys(),
+            buffer.notation,
+            buffer.exactKeys(),
+        )
+
+        assertEquals(buffer, restored)
+        assertEquals(
+            EvalResult.Success(Rational.of(7) / Rational.of(3)),
+            Evaluator.evaluate(restored),
+        )
+    }
+
+    @Test
+    fun `sans valeur exacte la cle reste vide comme dans l'ancien format`() {
+        val typed = type("2+3")
+
+        assertEquals("", typed.exactKeys())
+        assertEquals(typed, ExpressionBuffer.replay("2+3"))
+    }
+
+    @Test
+    fun `une valeur exacte invalide est ignoree`() {
+        val digitsOnly = ExpressionBuffer.replay("0.33")
+
+        // Illisible, dénominateur nul, négative, ou mal alignée sur les nombres rejoués.
+        listOf("abc", "1/0", "-1/3", "1/3;1/3").forEach { stored ->
+            assertEquals(digitsOnly, ExpressionBuffer.replay("0.33", exactKeys = stored), stored)
+        }
     }
 
     // -------------------------------------------------------------- utilitaires

@@ -27,8 +27,8 @@ data class RpnOutcome(val session: RpnSession, val error: EvalError? = null)
  * de frappe *est* l'ordre de calcul, il n'y a ni priorité ni parenthèses à résoudre.
  *
  * @property entry le nombre en cours de frappe. Contient au plus un [Atom.Number] ;
- *   l'invariant tient parce que seuls [appendDigit], [appendSeparator] et [deleteLast] y
- *   touchent — jamais `appendOperator` ni les parenthèses.
+ *   l'invariant tient parce que seuls [appendDigit], [appendSeparator], [appendNumber] et
+ *   [deleteLast] y touchent — jamais `appendOperator` ni les parenthèses.
  * @property entryNegative le signe de la frappe, porté ici et non dans les chiffres.
  *   `Atom.Number.digits` n'a pas de signe : en infixe un négatif est un `Atom.Op(MINUS)`,
  *   ce qui n'a aucun sens sur un opérande isolé. D'où la touche ± plutôt qu'un `−`.
@@ -63,6 +63,13 @@ data class RpnSession(
     fun appendDigit(digit: Char): RpnSession = copy(entry = entry.appendDigit(digit))
 
     fun appendSeparator(): RpnSession = copy(entry = entry.appendSeparator())
+
+    /**
+     * Un nombre collé, avec sa valeur exacte éventuelle : voir [ExpressionBuffer.appendNumber].
+     * L'invariant « au plus un nombre » tient : le collage prolonge ou remplace la frappe.
+     */
+    fun appendNumber(digits: String, exact: Rational? = null): RpnSession =
+        copy(entry = entry.appendNumber(digits, exact))
 
     /**
      * Efface le dernier caractère **de la frappe uniquement**.
@@ -169,6 +176,16 @@ data class RpnSession(
 
     /** La frappe sous une forme que [restore] sait relire, comme `replayKeys`. */
     fun entryKeys(): String = entry.replayKeys()
+
+    /** La valeur exacte de la frappe, comme [ExpressionBuffer.exactKeys]. */
+    fun entryExactKeys(): String = entry.exactKeys()
+
+    /**
+     * Rend à la frappe restaurée la valeur exacte écrite par [entryExactKeys]. À chaîner
+     * après [restore] ; une valeur invalide est ignorée (voir [ExpressionBuffer.withExactKeys]).
+     */
+    fun withEntryExactKeys(exactKeys: String): RpnSession =
+        copy(entry = entry.withExactKeys(exactKeys))
 
     // ----------------------------------------------------------------- interne
 

@@ -70,6 +70,10 @@ data class SimpleSession(
 
     fun appendSeparator(): SimpleSession = afterResult().copy(entry = entry.appendSeparator())
 
+    /** Un nombre collé, avec sa valeur exacte éventuelle : voir [ExpressionBuffer.appendNumber]. */
+    fun appendNumber(digits: String, exact: Rational? = null): SimpleSession =
+        afterResult().copy(entry = entry.appendNumber(digits, exact))
+
     /**
      * Efface le dernier caractère **de la frappe uniquement**.
      *
@@ -168,6 +172,16 @@ data class SimpleSession(
 
     /** La frappe sous une forme que [restore] sait relire, comme `replayKeys`. */
     fun entryKeys(): String = entry.replayKeys()
+
+    /** La valeur exacte de la frappe, comme [ExpressionBuffer.exactKeys]. */
+    fun entryExactKeys(): String = entry.exactKeys()
+
+    /**
+     * Rend à la frappe restaurée la valeur exacte écrite par [entryExactKeys]. À chaîner
+     * après [restore] ; une valeur invalide est ignorée (voir [ExpressionBuffer.withExactKeys]).
+     */
+    fun withEntryExactKeys(exactKeys: String): SimpleSession =
+        copy(entry = entry.withExactKeys(exactKeys))
 
     /** L'accumulateur en **fraction** — `"7"`, `"-1/3"` — ou une chaîne vide s'il n'y en a pas. */
     fun accumulatorKeys(): String = accumulator?.toString().orEmpty()

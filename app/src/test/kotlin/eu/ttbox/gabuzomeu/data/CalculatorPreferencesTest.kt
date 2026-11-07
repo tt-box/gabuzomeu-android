@@ -3,6 +3,8 @@ package eu.ttbox.gabuzomeu.data
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import eu.ttbox.gabuzomeu.core.eval.NumberNotation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +49,54 @@ class CalculatorPreferencesTest {
 
             assertEquals(StoredSession(), store.session.first())
             assertEquals(DisplaySettings(), store.settings.first())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `les valeurs exactes font l'aller-retour sur le disque`() = runTest {
+        val session = StoredSession(
+            keys = "2+0.33333333333333333333",
+            exact = ";1/3",
+            rpn = StoredRpn(entry = "0.7", entryExact = "7/10"),
+            simple = StoredSimple(entry = "0.2", entryExact = "1/5"),
+        )
+
+        withDataStore { dataStore ->
+            val store = CalculatorPreferences(dataStore)
+            store.save(session)
+
+            assertEquals(session, store.session.first())
+        }
+    }
+
+    @Test
+    fun `une session ecrite sans valeurs exactes se lit toujours`() = runTest {
+        withDataStore { dataStore ->
+            // Le format d'avant : seules les clés de frappe existent.
+            dataStore.edit { preferences ->
+                preferences[stringPreferencesKey("expression")] = "0.5"
+                preferences[stringPreferencesKey("rpn-entry")] = "3"
+            }
+
+            val session = CalculatorPreferences(dataStore).session.first()
+            assertEquals("0.5", session.keys)
+            assertEquals("", session.exact)
+            assertEquals(StoredRpn(entry = "3"), session.rpn)
+        }
+    }
+
+    private suspend fun withDataStore(block: suspend (DataStore<Preferences>) -> Unit) {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            block(
+                PreferenceDataStoreFactory.create(
+                    corruptionHandler = calculatorCorruptionHandler(),
+                    scope = scope,
+                    produceFile = { File(directory, "calculator.preferences_pb") },
+                ),
+            )
         } finally {
             scope.cancel()
         }

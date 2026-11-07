@@ -15,6 +15,8 @@ data class StoredRpn(
     val stack: String = "",
     val entry: String = "",
     val entryNegative: Boolean = false,
+    /** La valeur exacte de la frappe, en fraction ; voir [StoredSession.exact]. */
+    val entryExact: String = "",
 )
 
 /**
@@ -29,6 +31,8 @@ data class StoredSimple(
     val accumulator: String = "",
     val pending: String = "",
     val entryNegative: Boolean = false,
+    /** La valeur exacte de la frappe, en fraction ; voir [StoredSession.exact]. */
+    val entryExact: String = "",
 )
 
 /**
@@ -42,9 +46,15 @@ data class StoredSimple(
  * eux, un `7` tapé après `2+3=` et une mort du processus prolongeait le résultat (« 57 »)
  * au lieu de repartir de zéro. Leurs valeurs par défaut sont celles d'une saisie en cours,
  * ce qui garde lisibles les sessions écrites avant leur apparition.
+ *
+ * [exact] porte, nombre par nombre, la valeur exacte que les chiffres de [keys] ne font
+ * qu'approcher (`";1/3"` : le second nombre vaut un tiers). Sans elle, un tiers repris d'un
+ * résultat revenait tronqué à ses chiffres affichés. Vide par défaut, comme dans les
+ * sessions écrites avant lui : les nombres repartent alors de leurs chiffres.
  */
 data class StoredSession(
     val keys: String = "",
+    val exact: String = "",
     val notation: NumberNotation = NumberNotation.DECIMAL,
     val mode: CalculationMode = CalculationMode.CLASSIC,
     val rpn: StoredRpn = StoredRpn(),
