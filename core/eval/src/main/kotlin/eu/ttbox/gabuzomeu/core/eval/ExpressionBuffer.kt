@@ -68,7 +68,7 @@ data class ExpressionBuffer(
 
         val last = lastAtom
         return if (last is Atom.Number) {
-            replaceLast(last.copy(digits = last.digits + digit))
+            replaceLast(last.withDigits(last.digits + digit))
         } else {
             append(Atom.Number(notation, digit.toString()))
         }
@@ -88,7 +88,7 @@ data class ExpressionBuffer(
             if (last.hasSeparator) {
                 this
             } else {
-                replaceLast(last.copy(digits = last.digits + ShadokFormatter.SEPARATOR))
+                replaceLast(last.withDigits(last.digits + ShadokFormatter.SEPARATOR))
             }
         } else {
             // « .5 » s'écrit « 0.5 » : on matérialise le zéro de tête.
@@ -156,7 +156,7 @@ data class ExpressionBuffer(
     fun deleteLast(): ExpressionBuffer {
         val last = lastAtom ?: return this
         return if (last is Atom.Number && last.digits.length > 1) {
-            replaceLast(last.copy(digits = last.digits.dropLast(1)))
+            replaceLast(last.withDigits(last.digits.dropLast(1)))
         } else {
             copy(atoms = atoms.dropLast(1))
         }
@@ -165,11 +165,11 @@ data class ExpressionBuffer(
     fun clear(): ExpressionBuffer = copy(atoms = emptyList())
 
     /**
-     * Bascule le mode de saisie, en convertissant tous les nombres d'un bloc.
+     * Bascule le mode de saisie, en réécrivant tous les nombres d'un bloc.
      *
-     * Une conversion vers le Shadok peut être approchée (0.1 décimal n'a pas de
-     * développement fini en base 4) ; l'appelant est censé avoir consulté
-     * `render(...).approximate` au préalable pour prévenir l'utilisateur.
+     * **La valeur ne change jamais** : seule l'écriture suit la notation. Quand elle est
+     * approchée (0.1 décimal n'a pas de développement fini en base 4), le nombre garde sa
+     * valeur exacte dans [Atom.Number.exact], et `render(...).approximate` le signale.
      */
     fun withNotation(target: NumberNotation): ExpressionBuffer {
         if (target == notation) return this
@@ -177,7 +177,12 @@ data class ExpressionBuffer(
             if (atom !is Atom.Number) {
                 atom
             } else {
-                Atom.Number(target, atom.digitsIn(target))
+                val value = atom.value()
+                val digits = atom.digitsIn(target)
+                // Les chiffres réécrits suffisent quand ils redonnent la valeur ; sinon, on
+                // la porte à côté plutôt que de la laisser glisser à chaque bascule.
+                val exact = value.takeIf { Atom.Number(target, digits).value() != it }
+                Atom.Number(target, digits, exact)
             }
         }
         return ExpressionBuffer(notation = target, atoms = converted)
@@ -286,17 +291,29 @@ data class ExpressionBuffer(
             }
         }
 
+        /** Une retouche des chiffres : la valeur exacte éventuelle ne leur correspond plus. */
+        private fun Atom.Number.withDigits(newDigits: String): Atom.Number =
+            copy(digits = newDigits, exact = null)
+
+        /**
+         * Jugé sur la **valeur**, pas sur la notation de saisie : un nombre qui porte une
+         * valeur exacte peut être approché dans sa propre notation (0.1 basculé en Shadok,
+         * un tiers repris d'un résultat).
+         */
         private fun Atom.Number.isApproximateIn(display: ExpressionDisplay): Boolean =
             when (display) {
-                // Shadok → décimal est toujours exact ; décimal saisi est rendu verbatim.
-                ExpressionDisplay.DECIMAL -> false
+                // Toute frappe — décimale, ou Shadok puisque 4 = 2² — s'écrit exactement en
+                // décimal ; seule une valeur exacte comme un tiers peut ne pas l'être.
+                ExpressionDisplay.DECIMAL -> !value().hasFiniteDecimal
 
                 // Les trois écritures Shadok décrivent les mêmes chiffres : elles sont
                 // approchées ensemble ou pas du tout.
                 ExpressionDisplay.SHADOK_GLYPHS,
                 ExpressionDisplay.SHADOK_LABELS,
                 ExpressionDisplay.SHADOK_BASE4,
-                -> notation != NumberNotation.SHADOK && toBase4().approximate
+                // Une frappe Shadok est rendue verbatim, donc exacte, quelle que soit sa
+                // longueur ; seule une valeur portée à côté de ses chiffres peut ne pas l'être.
+                -> (notation != NumberNotation.SHADOK || exact != null) && toBase4().approximate
             }
 
         private fun Atom.Number.render(display: ExpressionDisplay): String = when (display) {

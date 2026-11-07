@@ -302,6 +302,27 @@ class SimpleSessionTest {
         assertEquals("", session.valueText())
     }
 
+    // ------------------------------------------------- operande gauche manquant, signe
+
+    @Test
+    fun `un operateur avant tout nombre prend zero pour operande gauche`() {
+        // Comme sur une machine de poche : l'afficheur montre 0, l'operateur s'y applique.
+        assertEquals(Rational.of(-3), SimpleSession().pressing(Operator.MINUS).type("3").result())
+        assertEquals(Rational.ZERO, SimpleSession().pressing(Operator.TIMES).type("3").result())
+        assertEquals(Rational.of(3), SimpleSession().pressing(Operator.PLUS).type("3").result())
+        assertEquals("0", SimpleSession().pressing(Operator.MINUS).valueText())
+    }
+
+    @Test
+    fun `le signe s'applique au resultat affiche quand rien n'est tape`() {
+        val negated = type("5").equalling().negate()
+
+        assertEquals(Rational.of(-5), negated.accumulator)
+        assertEquals("-5", negated.valueText())
+        // Et le calcul se poursuit depuis la valeur signee.
+        assertEquals(Rational.of(-2), negated.pressing(Operator.PLUS).type("3").result())
+    }
+
     // ------------------------------------------------------------------ utilitaires
 
     private fun type(digits: String): SimpleSession = SimpleSession().type(digits)

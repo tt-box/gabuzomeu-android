@@ -111,6 +111,24 @@ class CalculatorViewModelTest {
     }
 
     @Test
+    fun `un resultat prolonge garde sa valeur exacte`() = runTest {
+        val model = viewModel()
+
+        // 1÷3 = puis ×3 = : le tiers repris dans le tampon doit rester un tiers, pas son
+        // arrondi a 20 decimales, sinon on obtient 0.99999999999999999999 sans « ≈ ».
+        model.onKey(KeyAction.Digit('1'))
+        model.onKey(KeyAction.Op(Operator.DIVIDE))
+        model.onKey(KeyAction.Digit('3'))
+        model.onKey(KeyAction.Evaluate)
+        model.onKey(KeyAction.Op(Operator.TIMES))
+        model.onKey(KeyAction.Digit('3'))
+        model.onKey(KeyAction.Evaluate)
+
+        assertEquals("1", model.uiState.value.decimal)
+        assertFalse(model.uiState.value.decimalApproximate)
+    }
+
+    @Test
     fun `la division par zero remonte une erreur et laisse l'expression intacte`() = runTest {
         val model = viewModel()
 

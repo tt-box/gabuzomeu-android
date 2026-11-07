@@ -1,5 +1,6 @@
 package eu.ttbox.gabuzomeu.core.eval
 
+import eu.ttbox.gabuzomeu.core.shadok.Rational
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -250,6 +251,61 @@ class ExpressionBufferTest {
     fun `changer pour le meme mode ne fait rien`() {
         val buffer = type("6")
         assertEquals(buffer, buffer.withNotation(NumberNotation.DECIMAL))
+    }
+
+    // ------------------------------------------------- bascule sans perte de valeur
+
+    @Test
+    fun `basculer de notation ne change jamais la valeur`() {
+        // 0.1 n'a pas d'ecriture finie en base 4 : l'aller-retour passait par 16 chiffres
+        // tronques et revenait en 0.0999999998...
+        val roundTrip = type("0.1")
+            .withNotation(NumberNotation.SHADOK)
+            .withNotation(NumberNotation.DECIMAL)
+
+        assertEquals("0.1", decimalOf(roundTrip))
+        assertEquals(EvalResult.Success(Rational.ofDecimal("0.1")), Evaluator.evaluate(roundTrip))
+    }
+
+    @Test
+    fun `en Shadok la valeur exacte est conservee et l'ecriture signalee approchee`() {
+        val inShadok = type("0.1+1").withNotation(NumberNotation.SHADOK)
+
+        assertTrue(inShadok.render(ExpressionDisplay.SHADOK_GLYPHS).approximate)
+        assertFalse(inShadok.render(ExpressionDisplay.DECIMAL).approximate)
+        assertEquals("0.1+1", decimalOf(inShadok))
+        assertEquals(EvalResult.Success(Rational.ofDecimal("1.1")), Evaluator.evaluate(inShadok))
+    }
+
+    @Test
+    fun `un nombre exact sans ecriture decimale finie est signale approche en decimal`() {
+        val third = Rational.of(1) / Rational.of(3)
+        val buffer = ExpressionBuffer(
+            atoms = listOf(
+                Atom.Number(NumberNotation.DECIMAL, third.toDecimalString(), exact = third),
+            ),
+        )
+
+        assertTrue(buffer.render(ExpressionDisplay.DECIMAL).approximate)
+        val timesThree = buffer.appendOperator(Operator.TIMES).appendDigit('3')
+        assertEquals(EvalResult.Success(Rational.of(1)), Evaluator.evaluate(timesThree))
+    }
+
+    @Test
+    fun `retoucher un nombre exact repart de ses chiffres`() {
+        val third = Rational.of(1) / Rational.of(3)
+        val buffer = ExpressionBuffer(
+            atoms = listOf(Atom.Number(NumberNotation.DECIMAL, "0.33", exact = third)),
+        )
+
+        assertEquals(
+            EvalResult.Success(Rational.ofDecimal("0.3")),
+            Evaluator.evaluate(buffer.deleteLast()),
+        )
+        assertEquals(
+            EvalResult.Success(Rational.ofDecimal("0.331")),
+            Evaluator.evaluate(buffer.appendDigit('1')),
+        )
     }
 
     // -------------------------------------------------------------- utilitaires

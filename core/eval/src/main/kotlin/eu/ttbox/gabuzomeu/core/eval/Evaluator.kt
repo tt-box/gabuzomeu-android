@@ -20,7 +20,9 @@ object Evaluator {
     fun evaluate(atoms: List<Atom>): EvalResult {
         // Un opérateur en attente de son opérande est ignoré : appuyer sur « = » après
         // « 5+ » donne 5. Même comportement que Logic.java:242 dans le code d'origine.
-        val trimmed = atoms.dropLastWhile { it is Atom.Op }
+        // Une parenthèse ouvrante restée vide l'est aussi, avec ce qui la précède :
+        // « 2×( » et « 2×(− » donnent 2, pas une erreur de syntaxe.
+        val trimmed = atoms.dropLastWhile { it is Atom.Op || it is Atom.LeftParen }
         if (trimmed.isEmpty()) return EvalResult.Failure(EvalError.EMPTY)
 
         // Parenthèses laissées ouvertes : on les ferme, comme le faisait la

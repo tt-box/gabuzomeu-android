@@ -142,9 +142,10 @@ class ShadokConverterTest {
         val oneTenth = Rational.ofDecimal("0.1")
         val converted = ShadokConverter.toBase4(oneTenth, maxFractionDigits = 8)
 
-        // 0.1 = 0.0121212... en base 4 (periode « 12 »)
+        // 0.1 = 0.01212121|2... en base 4 (periode « 12 ») : le neuvieme chiffre, 2, vaut
+        // la moitie, le huitieme est donc arrondi au-dessus.
         assertTrue(converted.approximate)
-        assertEquals("0.01212121", ShadokFormatter.format(converted, ShadokNotation.BASE4, false))
+        assertEquals("0.01212122", ShadokFormatter.format(converted, ShadokNotation.BASE4, false))
     }
 
     /**
@@ -236,12 +237,41 @@ class ShadokConverterTest {
     }
 
     @Test
-    fun `maxFractionDigits a zero tronque toute la partie fractionnaire`() {
+    fun `maxFractionDigits a zero arrondit a l'entier le plus proche`() {
         val converted = ShadokConverter.toBase4(Rational.ofDecimal("0.5"), maxFractionDigits = 0)
 
         assertTrue(converted.approximate)
         assertTrue(converted.fractionDigits.isEmpty())
-        assertEquals("≈Ga", ShadokFormatter.format(converted, ShadokNotation.LABELS))
+        assertEquals("≈Bu", ShadokFormatter.format(converted, ShadokNotation.LABELS))
+    }
+
+    @Test
+    fun `le dernier chiffre est arrondi, pas tronque`() {
+        // 2/3 = 0.2222...|2 en base 4 : le chiffre suivant (2) vaut la moitie, on arrondit.
+        val twoThirds = Rational.of(BigInteger.TWO, BigInteger.valueOf(3))
+        val converted = ShadokConverter.toBase4(twoThirds, maxFractionDigits = 4)
+
+        assertTrue(converted.approximate)
+        assertEquals("0.2223", ShadokFormatter.format(converted, ShadokNotation.BASE4, false))
+    }
+
+    @Test
+    fun `l'arrondi propage sa retenue jusqu'a la partie entiere`() {
+        // 0.3333|3 en base 4 s'arrondit a 1.
+        val almostOne = Rational.of(BigInteger.valueOf(1023), BigInteger.valueOf(1024))
+        val converted = ShadokConverter.toBase4(almostOne, maxFractionDigits = 4)
+
+        assertTrue(converted.approximate)
+        assertEquals("1.0000", ShadokFormatter.format(converted, ShadokNotation.BASE4, false))
+    }
+
+    @Test
+    fun `un negatif minuscule ne s'affiche pas moins zero`() {
+        val tiny = -Rational.of(BigInteger.ONE, BigInteger.valueOf(1_000_000_000_000L))
+        val converted = ShadokConverter.toBase4(tiny, maxFractionDigits = 4)
+
+        assertFalse(converted.negative)
+        assertEquals("≈0.0000", ShadokFormatter.format(converted, ShadokNotation.BASE4))
     }
 
     private companion object {

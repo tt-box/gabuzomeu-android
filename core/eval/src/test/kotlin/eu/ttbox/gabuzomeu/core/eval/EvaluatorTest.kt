@@ -144,6 +144,33 @@ class EvaluatorTest {
 
     // -------------------------------------------------------------- utilitaires
 
+    @Test
+    fun `une parenthese ouvrante en attente est ignoree comme un operateur`() {
+        // « 2×( » puis « = » : rien n'a ete ecrit dans la parenthese, elle est abandonnee
+        // avec l'operateur qui la precede, au lieu de rendre l'expression invalide.
+        assertEquals(Rational.of(2), successOf("2*("))
+        assertEquals(Rational.of(2), successOf("2*(-"))
+        assertEquals(Rational.of(2), successOf("2*((("))
+        assertEquals(EvalError.EMPTY, failureOf("(("))
+    }
+
+    @Test
+    fun `une imbrication demesuree est une erreur de syntaxe, pas un debordement de pile`() {
+        val deep = ExpressionBuffer(
+            atoms = List(20_000) { Atom.LeftParen } + Atom.Number(NumberNotation.DECIMAL, "1"),
+        )
+
+        assertEquals(EvalResult.Failure(EvalError.SYNTAX), Evaluator.evaluate(deep))
+    }
+
+    @Test
+    fun `une imbrication raisonnable reste calculee`() {
+        val depth = Parser.MAX_DEPTH - 1
+        val keys = "(".repeat(depth) + "7" + ")".repeat(depth)
+
+        assertEquals(Rational.of(7), successOf(keys))
+    }
+
     private fun successOf(
         keys: String,
         notation: NumberNotation = NumberNotation.DECIMAL,

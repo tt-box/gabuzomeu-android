@@ -1,5 +1,6 @@
 package eu.ttbox.gabuzomeu.core.eval
 
+import eu.ttbox.gabuzomeu.core.shadok.Rational
 import eu.ttbox.gabuzomeu.core.shadok.ShadokDigit
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
@@ -67,6 +68,17 @@ class ClipboardNumberTest {
         assertEquals("42", typed(pasted, NumberNotation.SHADOK))
         // 42 = 222 en base 4, soit trois Zo.
         assertEquals("⅃⅃⅃", pasted.keys)
+    }
+
+    @Test
+    fun `un collage tronque est signale et garde sa valeur exacte`() {
+        val inShadok = assertNotNull(ClipboardNumber.parseOrNull("0.7", NumberNotation.SHADOK))
+        assertTrue(inShadok.approximate, "0.7 n'a pas d'ecriture finie en base 4")
+        assertEquals(Rational.ofDecimal("0.7"), inShadok.value)
+
+        val exact = assertNotNull(ClipboardNumber.parseOrNull("−0.5", NumberNotation.SHADOK))
+        assertFalse(exact.approximate)
+        assertEquals(Rational.ofDecimal("-0.5"), exact.value)
     }
 
     @ParameterizedTest(name = "\"{0}\"")

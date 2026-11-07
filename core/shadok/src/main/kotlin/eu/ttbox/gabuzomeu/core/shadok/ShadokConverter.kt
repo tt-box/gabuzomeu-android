@@ -16,6 +16,7 @@ object ShadokConverter {
 
     private val RADIX = BigInteger.valueOf(ShadokDigit.RADIX.toLong())
     private val RADIX_RATIONAL = Rational.of(ShadokDigit.RADIX)
+    private val HALF = Rational.of(BigInteger.ONE, BigInteger.TWO)
 
     /**
      * Écrit [value] en base 4 Shadok.
@@ -53,13 +54,50 @@ object ShadokConverter {
             remainder -= Rational.of(digit)
         }
 
+        val approximate = !remainder.isZero
+        // Arrondi au plus proche, la moitié vers le haut : 2/3 à quatre chiffres s'écrit
+        // 0.2223 et non 0.2222. Le reste est dans [0, 1[ en unités du dernier chiffre.
+        val rounded = if (approximate && remainder >= HALF) {
+            roundUp(integerDigits, fractionDigits)
+        } else {
+            integerDigits to fractionDigits
+        }
+
         return Base4Number(
-            // signum() == 0 pour zéro, donc pas de « −Ga ».
-            negative = value.signum() < 0,
-            integerDigits = integerDigits,
-            fractionDigits = fractionDigits,
-            approximate = !remainder.isZero,
+            // Négatif seulement si un chiffre non nul est écrit : signum() == 0 pour zéro,
+            // et un négatif minuscule arrondi à zéro ne doit pas s'afficher « −Ga.GaGa ».
+            negative = value.signum() < 0 &&
+                (rounded.first + rounded.second).any { it != ShadokDigit.GA },
+            integerDigits = rounded.first,
+            fractionDigits = rounded.second,
+            approximate = approximate,
         )
+    }
+
+    /**
+     * Ajoute une unité au dernier chiffre écrit, retenue comprise, jusque dans la partie
+     * entière (0.3333 + 0.0001 = 1.0000). Les chiffres écrits restent au nombre demandé,
+     * comme pour un résultat non arrondi ; l'écriture reste marquée approchée.
+     */
+    private fun roundUp(
+        integerDigits: List<ShadokDigit>,
+        fractionDigits: List<ShadokDigit>,
+    ): Pair<List<ShadokDigit>, List<ShadokDigit>> {
+        val values = (integerDigits + fractionDigits).map { it.value }.toMutableList()
+        var index = values.lastIndex
+        var carry = true
+        while (carry && index >= 0) {
+            val sum = values[index] + 1
+            carry = sum == ShadokDigit.RADIX
+            values[index] = if (carry) 0 else sum
+            index--
+        }
+        if (carry) values.add(0, 1)
+
+        val integerCount = values.size - fractionDigits.size
+        val digits = values.map { ShadokDigit.of(it) }
+        return digits.take(integerCount) to
+            digits.drop(integerCount)
     }
 
     /**

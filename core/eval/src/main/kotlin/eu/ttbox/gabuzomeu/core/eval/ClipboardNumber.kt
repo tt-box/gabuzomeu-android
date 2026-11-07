@@ -16,8 +16,18 @@ import eu.ttbox.gabuzomeu.core.shadok.ShadokParser
  * @property negative le signe, porté à part. `Atom.Number.digits` n'en contient pas, et en
  *   infixe un négatif est un `Atom.Op(MINUS)`, ce qui n'a pas de sens dans une suite de
  *   chiffres. C'est à l'appelant de l'appliquer avec les moyens de son mode.
+ * @property value la valeur exacte lue, signe compris. Quand [approximate] est vrai, [keys]
+ *   n'en est qu'une écriture arrondie : l'appelant peut la porter dans
+ *   `Atom.Number.exact` plutôt que de laisser la valeur glisser.
+ * @property approximate `true` si [keys] ne redonne pas exactement [value] — 0.7 décimal collé
+ *   dans le pavé Shadok, par exemple. Avant, cette troncature passait en silence.
  */
-data class PastedNumber(val keys: String, val negative: Boolean)
+data class PastedNumber(
+    val keys: String,
+    val negative: Boolean,
+    val value: Rational = Rational.ZERO,
+    val approximate: Boolean = false,
+)
 
 /**
  * La lecture d'un nombre venu du presse-papiers.
@@ -45,9 +55,12 @@ object ClipboardNumber {
         val trimmed = text.trim()
         val value = valueOrNull(trimmed, notation) ?: return null
 
+        val keys = keysOf(value.abs(), notation)
         return PastedNumber(
-            keys = keysOf(value.abs(), notation),
+            keys = keys,
             negative = value.signum() < 0,
+            value = value,
+            approximate = Atom.Number(notation, keys).value() != value.abs(),
         )
     }
 
@@ -114,8 +127,7 @@ object ClipboardNumber {
             number = ShadokConverter.toBase4(magnitude),
             notation = ShadokNotation.GLYPHS,
             // Le « ≈ » n'est pas un caractère que le pavé sait taper : une valeur sans
-            // écriture finie en base 4 est tronquée, exactement comme le fait déjà
-            // `withNotation` quand on bascule le pavé en cours de saisie.
+            // écriture finie en base 4 est arrondie, et `PastedNumber.approximate` le dit.
             markApproximation = false,
         )
     }

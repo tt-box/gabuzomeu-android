@@ -378,10 +378,15 @@ class CalculatorViewModel(
                 val value = result.value
                 // Le résultat devient le nouvel opérande, écrit en décimal : c'est la
                 // seule notation qui rend exactement toute valeur issue d'une saisie
-                // Shadok, puisque 4 = 2² et que 2 divise 10.
+                // Shadok, puisque 4 = 2² et que 2 divise 10. Pour le reste — un tiers —
+                // la fraction exacte voyage avec son écriture arrondie : `1÷3 = ×3 =`
+                // donne 1, et non 0.99999999999999999999.
+                val exact = value.takeUnless { it.hasFiniteDecimal }
                 buffer = ExpressionBuffer(
                     notation = buffer.notation,
-                    atoms = listOf(Atom.Number(NumberNotation.DECIMAL, value.toDecimalString())),
+                    atoms = listOf(
+                        Atom.Number(NumberNotation.DECIMAL, value.toDecimalString(), exact),
+                    ),
                 )
                 showingResult = true
                 // Un tiers, par exemple, n'a pas d'écriture décimale finie : le signaler

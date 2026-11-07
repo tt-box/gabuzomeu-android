@@ -35,6 +35,17 @@ sealed interface Atom {
         val notation: NumberNotation,
         /** Chiffres tels que saisis, dans [notation]. Peut finir par un séparateur. */
         val digits: String,
+        /**
+         * La valeur exacte, quand [digits] n'en est qu'une écriture approchée : un décimal
+         * 0.1 basculé en Shadok (pas d'écriture finie en base 4), ou un tiers repris d'un
+         * résultat. `null` pour une frappe ordinaire, dont les chiffres *sont* la valeur.
+         *
+         * Sans elle, basculer de notation réécrivait le nombre tronqué à 16 chiffres et en
+         * changeait la valeur : 0.1 → Shadok → décimal revenait en 0.0999999998…
+         * Toute retouche des chiffres (`appendDigit`, ⌫…) l'abandonne : ce que l'utilisateur
+         * modifie, ce sont les chiffres qu'il voit.
+         */
+        val exact: Rational? = null,
     ) : Atom {
 
         /** `true` si un séparateur décimal a déjà été saisi dans ce nombre. */
@@ -42,6 +53,7 @@ sealed interface Atom {
 
         /** Valeur exacte. Un séparateur final en cours de frappe est ignoré. */
         fun value(): Rational {
+            if (exact != null) return exact
             val sanitized = digits.trimEnd(ShadokFormatter.SEPARATOR)
             if (sanitized.isEmpty()) return Rational.ZERO
             return when (notation) {

@@ -15,10 +15,15 @@ internal class ParseException(val error: EvalError) : Exception(error.name)
  *
  * Le moins unaire est traité au niveau `facteur`, ce qui rend `5+−3` analysable — la
  * saisie que la règle 3 du tampon autorise explicitement.
+ *
+ * La récursion est bornée à [MAX_DEPTH] niveaux de parenthèses ou de moins unaires : au-delà,
+ * l'expression est refusée en [EvalError.SYNTAX]. Sans cette borne, vingt mille `(` collés
+ * ou restaurés épuisaient la pile d'appels — un `StackOverflowError` que rien ne rattrapait.
  */
 internal class Parser(private val atoms: List<Atom>) {
 
     private var position = 0
+    private var depth = 0
 
     fun parse(): Expr {
         val expression = parseExpression()
@@ -46,11 +51,18 @@ internal class Parser(private val atoms: List<Atom>) {
 
     private fun parseFactor(): Expr {
         val atom = atoms.getOrNull(position) ?: fail(EvalError.SYNTAX)
-        if (atom is Atom.Op && atom.operator == Operator.MINUS) {
-            position++
-            return Expr.Negate(parseFactor())
+        // Seul point de récursion : `facteur` se rappelle lui-même (moins unaire) ou, via
+        // `primaire`, rappelle `expression`. Le compter ici borne toute la descente.
+        if (++depth > MAX_DEPTH) fail(EvalError.SYNTAX)
+        try {
+            if (atom is Atom.Op && atom.operator == Operator.MINUS) {
+                position++
+                return Expr.Negate(parseFactor())
+            }
+            return parsePrimary()
+        } finally {
+            depth--
         }
-        return parsePrimary()
     }
 
     private fun parsePrimary(): Expr {
@@ -82,5 +94,13 @@ internal class Parser(private val atoms: List<Atom>) {
         val atom = atoms.getOrNull(position)
         if (atom !is Atom.Op) return null
         return atom.operator.takeIf { it in accepted }
+    }
+
+    companion object {
+        /**
+         * Profondeur d'imbrication maximale : bien plus que ce qu'un écran affiche, bien
+         * moins que ce que la pile d'appels supporte.
+         */
+        const val MAX_DEPTH: Int = 256
     }
 }

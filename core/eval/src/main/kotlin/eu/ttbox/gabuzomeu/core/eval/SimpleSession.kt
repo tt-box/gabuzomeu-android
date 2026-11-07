@@ -35,9 +35,8 @@ data class SimpleOutcome(val session: SimpleSession, val error: EvalError? = nul
  *   corrigé pour la NPI en 2.0.0-RC5.
  * @property showingResult l'affichage vient d'un `=` : un chiffre repart alors de zéro.
  * @property entryNegative le signe de la frappe, porté ici et non dans les chiffres —
- *   `Atom.Number.digits` n'en a pas. Le pavé Simple n'a pas de touche ± : ce champ existe
- *   pour qu'un nombre **collé** négatif reste négatif, plutôt que de perdre son signe en
- *   silence.
+ *   `Atom.Number.digits` n'en a pas. Il sert au ± ([negate]) et à ce qu'un nombre **collé**
+ *   négatif reste négatif, plutôt que de perdre son signe en silence.
  */
 data class SimpleSession(
     val entry: ExpressionBuffer = ExpressionBuffer(),
@@ -84,8 +83,16 @@ data class SimpleSession(
         return copy(entry = shortened, entryNegative = entryNegative && !shortened.isEmpty)
     }
 
-    /** Change le signe de la frappe. Sans frappe, il n'y a rien à signer. */
-    fun negate(): SimpleSession = if (entering) copy(entryNegative = !entryNegative) else this
+    /**
+     * Change le signe **de la valeur affichée** : la frappe si elle est en cours, sinon
+     * l'accumulateur — `5 = ±` donne −5, et le calcul se poursuit depuis −5. Sans frappe ni
+     * accumulateur, l'afficheur est vide : il n'y a rien à signer.
+     */
+    fun negate(): SimpleSession = when {
+        entering -> copy(entryNegative = !entryNegative)
+        accumulator != null -> copy(accumulator = -accumulator)
+        else -> this
+    }
 
     /** POMPER : la frappe, l'accumulateur et l'opération en attente. Tout. */
     fun clear(): SimpleSession = SimpleSession(entry = entry.clear())
@@ -98,9 +105,14 @@ data class SimpleSession(
      * La résolution n'a lieu que si **un nombre a été tapé depuis** la précédente : deux
      * opérateurs de suite remplacent donc simplement le premier, sans rien recalculer. C'est
      * ce qui permet de corriger un `+` malencontreux par un `×` sans effacer.
+     *
+     * Avant tout nombre, l'opérande gauche **vaut zéro** — ce que montre l'afficheur d'une
+     * machine de poche au repos : `− 3 =` donne −3, `× 3 =` donne 0. Ignorer l'opérateur,
+     * comme avant, faisait de `− 3 =` un 3 : un signe perdu en silence.
      */
     fun operator(operator: Operator): SimpleOutcome {
-        val resolved = resolve() ?: return SimpleOutcome(this, EvalError.DIVISION_BY_ZERO)
+        val base = if (accumulator == null && !entering) copy(accumulator = Rational.ZERO) else this
+        val resolved = base.resolve() ?: return SimpleOutcome(this, EvalError.DIVISION_BY_ZERO)
         return SimpleOutcome(resolved.copy(pending = operator, showingResult = false))
     }
 
@@ -175,12 +187,13 @@ data class SimpleSession(
         // Rien de tapé depuis le dernier opérateur : il n'y a pas de second opérande, donc
         // rien à calculer. L'accumulateur reste ce qu'il était.
         val value = typed ?: return clearEntry()
-        val left = accumulator
-        val computed = if (pending == null || left == null) {
+        val computed = if (pending == null) {
             value
         } else {
             try {
-                pending.applyTo(left, value)
+                // Un accumulateur absent avec une opération en attente ne vient que d'un état
+                // restauré incohérent : zéro, comme pour un opérateur tapé avant tout nombre.
+                pending.applyTo(accumulator ?: Rational.ZERO, value)
             } catch (_: ArithmeticException) {
                 return null
             }
