@@ -1,0 +1,55 @@
+# Mises à jour automatiques des dépendances. Chaque PR passe la CI complète ; si elle
+# est verte, le workflow dependabot-automerge.yml la fusionne sans intervention.
+version: 2
+updates:
+  # Dépendances Gradle : gradle/libs.versions.toml (catalogue partagé avec build-logic)
+  # et le wrapper Gradle.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+    groups:
+      # La BOM Compose, Kotlin et l'AGP bougent ensemble : une PR par famille évite
+      # des états intermédiaires incompatibles.
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "com.google.devtools.ksp*"
+      android-gradle-plugin:
+        patterns:
+          - "com.android.*"
+      androidx:
+        patterns:
+          - "androidx.*"
+      test:
+        patterns:
+          - "org.junit*"
+          - "app.cash.turbine*"
+          - "org.jetbrains.kotlinx:kotlinx-coroutines-test"
+      outillage:
+        patterns:
+          - "com.diffplug.spotless*"
+          - "io.gitlab.arturbosch.detekt*"
+          - "org.jetbrains.kotlinx.kover*"
+
+  # Actions GitHub des workflows.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    ignore:
+      # Gelé en v5 volontairement : la v6 passe le cache sous licence propriétaire et
+      # retire le cache de configuration (voir la note de ci.yml).
+      - dependency-name: "gradle/actions*"
+        update-types: ["version-update:semver-major"]

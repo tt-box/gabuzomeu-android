@@ -1,0 +1,32 @@
+name: Dependabot auto-merge
+
+# Active l'auto-merge GitHub sur les PR de Dependabot. La fusion n'a lieu qu'une fois
+# les vérifications obligatoires de la branche main au vert : c'est la protection de
+# branche (« Require status checks to pass ») qui fait office de garde-fou, ce workflow
+# ne fait qu'armer la fusion.
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    name: Armer l'auto-merge
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: Métadonnées Dependabot
+        id: meta
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Approuver et activer l'auto-merge (squash)
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+        run: |
+          echo "Mise à jour : ${UPDATE_TYPE:-groupée}"
+          gh pr merge --auto --squash "$PR_URL"

@@ -1,5 +1,14 @@
 # GaBuZoMeu — la calculatrice en base 4 des Shadoks
 
+[![CI](https://github.com/tt-box/gabuzomeu-android/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/ci.yml)
+[![Couverture](https://codecov.io/gh/tt-box/gabuzomeu-android/branch/main/graph/badge.svg)](https://codecov.io/gh/tt-box/gabuzomeu-android)
+[![CVE](https://github.com/tt-box/gabuzomeu-android/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/security.yml)
+[![Release](https://github.com/tt-box/gabuzomeu-android/actions/workflows/release.yml/badge.svg)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/release.yml)
+[![Dernière version](https://img.shields.io/github/v/release/tt-box/gabuzomeu-android?include_prereleases&sort=semver&label=version)](https://github.com/tt-box/gabuzomeu-android/releases)
+[![Dependabot](https://img.shields.io/badge/Dependabot-actif-025E8C?logo=dependabot)](https://github.com/tt-box/gabuzomeu-android/network/updates)
+[![Kotlin](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftt-box%2Fgabuzomeu-android%2Fmain%2Fgradle%2Flibs.versions.toml&query=%24.versions.kotlin&label=Kotlin&logo=kotlin&color=7F52FF)](https://kotlinlang.org)
+[![API min](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftt-box%2Fgabuzomeu-android%2Fmain%2Fgradle%2Flibs.versions.toml&query=%24.versions.minSdk&label=API%20min&logo=android&color=3DDC84)](https://developer.android.com/tools/releases/platforms)
+
 > Quand il n'y a pas de Shadoks, on dit **GA**
 > Quand il y a un shadok de plus, on dit **BU**
 > Quand il y a encore un shadok de plus, on dit **ZO**
@@ -95,11 +104,22 @@ pas reconstruire un tampon invalide.
 
 ## Signature de la version release
 
+La clé de release est une clé **ECDSA P-256** (secp256r1), au format PKCS12, signée
+en v2 + v3/v3.1 (+ v4). Pour en générer une :
+
+```bash
+keytool -genkeypair -keystore gabuzomeu-release.p12 -storetype PKCS12 \
+  -alias gabuzomeu-release -keyalg EC -groupname secp256r1 \
+  -sigalg SHA256withECDSA -validity 10000
+```
+
+En PKCS12, le mot de passe de la clé est celui du keystore.
+
 Ne jamais mettre d'identifiants dans le dépôt. En local, créer un `keystore.properties`
 à la racine (il est dans `.gitignore`) :
 
 ```properties
-storeFile=/chemin/vers/gabuzomeu.jks
+storeFile=/chemin/vers/gabuzomeu-release.p12
 storePassword=…
 keyAlias=…
 keyPassword=…
@@ -113,14 +133,31 @@ vérifier que R8 n'a rien supprimé de nécessaire.
 
 ## Intégration et livraison continues
 
-Deux workflows GitHub Actions, dans `.github/workflows/` :
+Quatre workflows GitHub Actions, dans `.github/workflows/` :
 
 | Workflow | Déclencheur | Rôle |
 |---|---|---|
-| `ci.yml` | push sur `master`, chaque pull request | Tests JVM de la logique métier, puis `spotlessCheck`, `detekt`, `build` (compilation + lint + tests) et APK release. Un troisième job lance les tests instrumentés sur un émulateur API 31. |
-| `release.yml` | tag `v*.*.*`, ou manuellement | Rejoue toutes les vérifications, construit l'AAB et l'APK **signés**, et publie une release GitHub avec les artefacts. |
+| `ci.yml` | push sur `main`, chaque pull request | Tests JVM de la logique métier, puis `spotlessCheck`, `detekt`, `build` (compilation + lint + tests) et APK release. Un troisième job lance les tests instrumentés sur un émulateur API 31. |
+| `release.yml` | push d'un tag `1.2.3` / `v1.2.3` (reprise manuelle possible) | Rejoue toutes les vérifications, construit l'AAB et l'APK **signés**, et crée la release GitHub avec les artefacts. |
+| `security.yml` | push sur `main`, chaque pull request, chaque lundi | OSV-Scanner contrôle les CVE connues des dépendances du catalogue (badge « CVE ») ; le graphe Gradle complet est soumis à GitHub pour les alertes Dependabot. |
+| `dependabot-automerge.yml` | PR ouverte par Dependabot | Arme l'auto-merge (squash) : la PR est fusionnée dès que les vérifications obligatoires sont vertes. |
 
-Publier une version :
+**Couverture** : [Kover](https://github.com/Kotlin/kotlinx-kover) instrumente les tests
+unitaires des quatre modules ; `./gradlew koverXmlReport` (ou `koverHtmlReport`) produit
+le rapport agrégé dans `build/reports/kover/`, que la CI publie sur Codecov (via OIDC,
+sans secret). Les tests instrumentés sur émulateur n'y sont pas comptés.
+
+**Dépendances** : Dependabot (`.github/dependabot.yml`) propose chaque lundi les mises à
+jour Gradle et GitHub Actions, regroupées par famille. Une fois la CI verte, la PR est
+fusionnée automatiquement. Cela suppose, dans les réglages du dépôt :
+
+- *Settings ▸ General ▸ Allow auto-merge* coché ;
+- une règle de protection de `main` exigeant les vérifications `Logique métier (JVM)`,
+  `Build, lint et style`, `Tests instrumentés (émulateur API 31)` et `CVE (OSV-Scanner)`.
+  Sans vérification obligatoire, l'auto-merge fusionnerait **immédiatement**.
+
+Publier une version : il suffit de pousser un tag, le workflow crée la release.
+Ne pas créer la release à la main depuis l'interface GitHub.
 
 ```bash
 git tag v1.0.0
@@ -135,12 +172,14 @@ Secrets à définir dans les paramètres du dépôt pour que la release soit sig
 
 | Secret | Contenu |
 |---|---|
-| `KEYSTORE_BASE64` | le keystore encodé : `base64 -w0 release.jks` |
+| `KEYSTORE_BASE64` | le keystore encodé : `base64 -w0 gabuzomeu-release.p12` |
 | `KEYSTORE_PASSWORD` | mot de passe du keystore |
 | `KEY_ALIAS` | alias de la clé |
 | `KEY_PASSWORD` | mot de passe de la clé |
 
-En leur absence le workflow reste vert, mais les artefacts sortent **non signés**.
+En leur absence, la release **échoue** : un APK non signé ne s'installe pas. Le workflow
+vérifie aussi que l'APK et l'AAB sont signés par le certificat attendu (empreinte SHA-256
+épinglée dans `release.yml`).
 
 ## Historique
 

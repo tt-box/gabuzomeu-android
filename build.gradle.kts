@@ -12,6 +12,7 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.spotless)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.kover)
 }
 
 // Formatage uniforme sur tous les modules. Le projet d'origine n'avait aucun garde-fou :
@@ -57,4 +58,18 @@ subprojects {
         parallel = true
         source.setFrom("src/main/kotlin", "src/test/kotlin", "src/androidTest/kotlin")
     }
+}
+
+// Couverture de code. Kover instrumente les tests unitaires (JVM et tests locaux
+// Android) ; le projet racine agrège les quatre modules en un seul rapport, publié
+// sur Codecov par la CI. Les tests instrumentés (émulateur) n'y figurent pas.
+subprojects {
+    apply(plugin = "org.jetbrains.kotlinx.kover")
+}
+
+dependencies {
+    kover(projects.app)
+    kover(projects.widget)
+    kover(projects.core.shadok)
+    kover(projects.core.eval)
 }

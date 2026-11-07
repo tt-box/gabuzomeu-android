@@ -7,7 +7,7 @@ on:
   push:
     # Les branches de travail sont validées dès la poussée, sans attendre la PR.
     branches:
-      - master
+      - main
       - 'feat/**'
       - 'fix/**'
   pull_request:
@@ -54,6 +54,10 @@ jobs:
   build:
     name: Build, lint et style
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Jeton OIDC pour Codecov : pas de secret à gérer, y compris sur les PR Dependabot.
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -73,6 +77,19 @@ jobs:
       - name: Build complet, lint et tests unitaires
         # `build` enchaîne assemble + lint (en warningsAsErrors) + test.
         run: ./gradlew build
+
+      # Les tests viennent de tourner sous instrumentation Kover : le rapport agrégé
+      # (racine) ne fait que relire leurs résultats.
+      - name: Rapport de couverture
+        run: ./gradlew koverXmlReport
+
+      # Un incident chez Codecov ne doit pas rendre la CI rouge — et donc bloquer
+      # l'auto-merge des PR Dependabot.
+      - uses: codecov/codecov-action@v7
+        with:
+          use_oidc: true
+          files: build/reports/kover/report.xml
+          fail_ci_if_error: false
 
       - uses: actions/upload-artifact@v7
         if: failure()

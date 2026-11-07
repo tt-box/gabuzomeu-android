@@ -8,6 +8,7 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+*.p12
 
 ### Android Studio / IntelliJ
 .idea/
@@ -32,3 +33,6 @@ gen
 # Note : lint.xml n'est volontairement PAS ignoré. Le projet d'origine l'ignorait,
 # ce qui revenait à ne pas suivre le lint du tout ; il est désormais en
 # warningsAsErrors dans les convention plugins.
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

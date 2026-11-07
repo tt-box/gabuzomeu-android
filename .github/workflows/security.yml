@@ -1,0 +1,52 @@
+name: Sécurité
+
+# Deux regards complémentaires sur les vulnérabilités connues (CVE) :
+# - OSV-Scanner lit gradle/libs.versions.toml et interroge osv.dev. Il échoue si une
+#   dépendance déclarée est vulnérable : c'est le statut affiché par le badge « CVE ».
+# - La soumission du graphe Gradle transmet à GitHub l'arbre complet, dépendances
+#   transitives comprises, pour que les alertes Dependabot les couvrent aussi.
+# L'exécution hebdomadaire attrape les CVE publiées après coup, sans nouveau commit.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  osv-scanner:
+    name: CVE (OSV-Scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: google/osv-scanner-action/osv-scanner-action@v2.7.0
+        with:
+          scan-args: |-
+            --recursive
+            ./
+
+  dependency-graph:
+    name: Graphe de dépendances
+    # Le graphe ne vaut que pour la branche par défaut ; sur une PR, rien à soumettre.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/dependency-submission@v5
