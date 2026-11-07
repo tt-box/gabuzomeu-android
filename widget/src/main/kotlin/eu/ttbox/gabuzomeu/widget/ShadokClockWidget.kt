@@ -13,6 +13,7 @@ import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.Image
 import androidx.glance.ImageProvider
+import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
@@ -65,25 +66,34 @@ class ShadokClockWidget : GlanceAppWidget() {
             .getLaunchIntentForPackage(context.packageName)
             ?.component
 
-        // Locale, heure et date sont lues ICI, hors du composable — provideGlance est
-        // rappelé à chaque mise à jour, donc à chaque minute.
-        //
-        // On passe par la configuration du Context et non par Locale.getDefault() : cela
-        // respecte la langue choisie pour cette application seule (android:localeConfig).
-        // L'original figeait les noms de jours et de mois dans des initialiseurs
-        // statiques (ClockWidgetProvider.java:22-24), donc au chargement de la classe :
-        // un changement de langue ne se voyait qu'après redémarrage du processus.
-        val locale = context.resources.configuration.locales[0]
-        val time = LocalTime.now()
-        val date = LocalDate.now()
-
         provideContent {
+            // L'état est lu en premier, et l'heure, la date et la locale juste après, dans la
+            // MÊME portée de recomposition. C'est ce qui les garde à jour.
+            //
+            // Elles étaient auparavant lues avant provideContent, en supposant provideGlance
+            // rappelé à chaque minute. Ce n'est pas le cas : tant que la session Glance est en
+            // vie (une quarantaine de secondes après le dernier rendu), update() et updateAll()
+            // ne font que **recomposer** ce bloc. Le tic de minute, un changement de fuseau ou
+            // de langue réaffichaient alors les valeurs capturées au démarrage de la session.
+            // Glance réémet l'état à chaque update(), ce qui relance cette portée : chaque
+            // recomposition relit donc l'horloge.
+            val options = ClockWidgetOptions.from(currentState<Preferences>())
+
+            // Par la configuration du Context et non par Locale.getDefault() : cela respecte
+            // la langue choisie pour cette application seule (android:localeConfig).
+            // L'original figeait les noms de jours et de mois dans des initialiseurs
+            // statiques (ClockWidgetProvider.java:22-24), donc au chargement de la classe :
+            // un changement de langue ne se voyait qu'après redémarrage du processus.
+            val locale = LocalContext.current.resources.configuration.locales[0]
+            val time = LocalTime.now()
+            val date = LocalDate.now()
+
             GlanceTheme {
                 ClockContent(
                     time = time,
                     date = date,
                     locale = locale,
-                    options = ClockWidgetOptions.from(currentState<Preferences>()),
+                    options = options,
                     launchComponent = launchComponent,
                 )
             }

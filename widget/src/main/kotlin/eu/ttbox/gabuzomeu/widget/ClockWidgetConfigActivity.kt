@@ -38,7 +38,9 @@ import androidx.glance.appwidget.updateAll
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.lifecycle.lifecycleScope
 import eu.ttbox.gabuzomeu.core.shadok.ShadokNotation
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * L'écran de réglages d'un widget **déjà posé**, quel qu'en soit le genre.
@@ -58,6 +60,9 @@ import kotlinx.coroutines.launch
 class ClockWidgetConfigActivity : ComponentActivity() {
 
     private var appWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID
+
+    /** Vrai dès que l'enregistrement est lancé : le bouton est alors grisé. */
+    private var saving by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,6 +101,7 @@ class ClockWidgetConfigActivity : ComponentActivity() {
                     WidgetConfigScreen(
                         initial = current,
                         showClockOptions = isDigitalClock,
+                        saving = saving,
                         onSave = ::save,
                     )
                 }
@@ -119,19 +125,28 @@ class ClockWidgetConfigActivity : ComponentActivity() {
      * Le redessin est indispensable : écrire l'état ne déclenche aucune recomposition par
      * lui-même, et le widget resterait affiché avec ses anciens réglages jusqu'au prochain tic.
      * Les trois genres sont rafraîchis — `updateAll` ne fait rien pour un genre absent.
+     *
+     * Écriture, redessin et résultat forment un tout, exécuté sous [NonCancellable] :
+     * `lifecycleScope` est annulé dès que l'activité est détruite (retour arrière, rotation,
+     * processus réclamé). Annulé entre l'écriture et le redessin, le widget gardait son ancien
+     * aspect jusqu'au prochain tic ; annulé avant `setResult`, l'hôte recevait RESULT_CANCELED
+     * et retirait un widget pourtant réglé. Le bouton est grisé pendant ce temps, ce qui écarte
+     * aussi les doubles appuis et les écritures concurrentes.
      */
     private fun save(options: ClockWidgetOptions) {
+        if (saving) return
+        saving = true
         lifecycleScope.launch {
-            val glanceId = GlanceAppWidgetManager(this@ClockWidgetConfigActivity)
-                .getGlanceIdBy(appWidgetId)
-            updateAppWidgetState(this@ClockWidgetConfigActivity, glanceId) { preferences ->
-                ClockWidgetOptions.writeTo(preferences, options)
-            }
-            ShadokWidgets.all().forEach { widget ->
-                widget.updateAll(this@ClockWidgetConfigActivity)
-            }
+            withContext(NonCancellable) {
+                val context = this@ClockWidgetConfigActivity
+                val glanceId = GlanceAppWidgetManager(context).getGlanceIdBy(appWidgetId)
+                updateAppWidgetState(context, glanceId) { preferences ->
+                    ClockWidgetOptions.writeTo(preferences, options)
+                }
+                ShadokWidgets.all().forEach { widget -> widget.updateAll(context) }
 
-            setResult(RESULT_OK, resultIntent())
+                setResult(RESULT_OK, resultIntent())
+            }
             finish()
         }
     }
@@ -141,6 +156,7 @@ class ClockWidgetConfigActivity : ComponentActivity() {
 private fun WidgetConfigScreen(
     initial: ClockWidgetOptions,
     showClockOptions: Boolean,
+    saving: Boolean,
     onSave: (ClockWidgetOptions) -> Unit,
 ) {
     // `initial` vient de l'état persisté : sur un widget déjà réglé, l'écran s'ouvre donc sur ses
@@ -168,6 +184,7 @@ private fun WidgetConfigScreen(
 
             Button(
                 onClick = { onSave(options) },
+                enabled = !saving,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 20.dp),

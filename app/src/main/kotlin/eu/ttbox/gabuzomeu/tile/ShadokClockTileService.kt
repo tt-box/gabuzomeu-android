@@ -3,6 +3,8 @@ package eu.ttbox.gabuzomeu.tile
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import eu.ttbox.gabuzomeu.MainActivity
@@ -13,14 +15,49 @@ import java.time.LocalTime
  * L'heure Shadok dans le panneau des réglages rapides.
  *
  * Le pendant léger des widgets d'horloge : **aucun réveil**. `onStartListening` n'est appelé
- * que lorsque le panneau devient visible, si bien que la tuile n'a besoin ni d'alarme, ni de
- * cadence, ni de rien à annuler quand on la retire. C'est exactement ce que le widget d'origine
- * ne savait pas faire : il réarmait un réveil par minute qui survivait à sa suppression.
+ * que lorsque le panneau devient visible ; la tuile ne se rafraîchit donc, minute après minute,
+ * que pendant qu'on la regarde, et tout s'arrête dans `onStopListening`. Ni alarme, ni rien qui
+ * survive au panneau — exactement ce que le widget d'origine ne savait pas faire : il réarmait
+ * un réveil par minute qui survivait à sa suppression.
  */
 class ShadokClockTileService : TileService() {
 
+    private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Le rafraîchissement à la minute suivante, tant que le panneau reste ouvert.
+     *
+     * Sans lui, l'heure n'était posée qu'à l'ouverture : panneau ouvert à 12:59:58, la tuile
+     * affichait encore 12:59 deux secondes plus tard, et aussi longtemps qu'on la regardait.
+     * Ce n'est pas un réveil : un simple message sur le fil principal, posé seulement entre
+     * `onStartListening` et `onStopListening`, qui ne réveille jamais l'appareil.
+     */
+    private val refresh: Runnable = object : Runnable {
+        override fun run() {
+            showCurrentTime()
+            handler.postDelayed(this, millisUntilNextMinute(LocalTime.now()))
+        }
+    }
+
     override fun onStartListening() {
         super.onStartListening()
+        handler.removeCallbacks(refresh)
+        refresh.run()
+    }
+
+    override fun onStopListening() {
+        // Panneau refermé : plus rien à rafraîchir. Ne pas annuler laisserait un message
+        // relancer la tuile chaque minute, indéfiniment, pour un affichage que personne ne voit.
+        handler.removeCallbacks(refresh)
+        super.onStopListening()
+    }
+
+    override fun onDestroy() {
+        handler.removeCallbacks(refresh)
+        super.onDestroy()
+    }
+
+    private fun showCurrentTime() {
         val now = LocalTime.now()
 
         qsTile?.apply {
@@ -81,4 +118,21 @@ class ShadokClockTileService : TileService() {
         /** Une seule intention, jamais distinguée d'une autre : le code n'a pas à varier. */
         const val REQUEST_CODE = 0
     }
+}
+
+private const val MILLIS_PER_MINUTE = 60_000L
+private const val MILLIS_PER_SECOND = 1_000L
+private const val NANOS_PER_MILLI = 1_000_000L
+
+/**
+ * Une petite marge au-delà de la frontière : le délai d'un `Handler` se compte en temps de
+ * fonctionnement, pas en heure murale. Sans marge, un réveil arrivé une milliseconde trop tôt
+ * relirait encore l'ancienne minute.
+ */
+private const val BOUNDARY_MARGIN_MILLIS = 50L
+
+/** Le délai jusqu'au début de la minute suivante, marge comprise. */
+internal fun millisUntilNextMinute(now: LocalTime): Long {
+    val elapsedInMinute = now.second * MILLIS_PER_SECOND + now.nano / NANOS_PER_MILLI
+    return MILLIS_PER_MINUTE - elapsedInMinute + BOUNDARY_MARGIN_MILLIS
 }

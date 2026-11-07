@@ -3,19 +3,24 @@
     Remplace android:allowBackup, déprécié depuis Android 12 (API 31) — soit
     exactement notre minSdk, donc aucun repli android:fullBackupContent n'est requis.
 
-    L'application ne persiste que la dernière expression saisie et le mode de saisie,
-    dans un DataStore sous files/datastore/. Rien d'autre ne mérite d'être sauvegardé,
-    et rien n'est sensible.
+    Seul le DataStore de la calculatrice est sauvegardé : la dernière expression saisie,
+    le mode de saisie et les réglages d'affichage. Rien n'est sensible.
+
+    Surtout PAS le reste de files/datastore/ : Glance y range l'état de chaque widget dans
+    un fichier nommé d'après son appWidgetId. Or ces identifiants sont réattribués par le
+    lanceur sur le nouvel appareil, et l'application ne traite pas APPWIDGET_RESTORED :
+    restaurés tels quels, les réglages d'un widget atterriraient sur un autre — ou sur
+    aucun. Mieux vaut des widgets aux réglages par défaut que des réglages croisés.
 -->
 <data-extraction-rules>
     <cloud-backup>
         <include
             domain="file"
-            path="datastore" />
+            path="datastore/calculator.preferences_pb" />
     </cloud-backup>
     <device-transfer>
         <include
             domain="file"
-            path="datastore" />
+            path="datastore/calculator.preferences_pb" />
     </device-transfer>
 </data-extraction-rules>

@@ -61,14 +61,18 @@ internal class ShadokDialWidget(
             .getLaunchIntentForPackage(context.packageName)
             ?.component
 
-        val time = LocalTime.now()
-
         provideContent {
             GlanceTheme {
                 val glanceContext = LocalContext.current
                 val available = LocalSize.current
                 val density = glanceContext.resources.displayMetrics.density
                 val options = WidgetBackgroundOptions.from(currentState<Preferences>())
+                // L'heure est lue ICI, dans la portée qui lit l'état, et non avant
+                // provideContent. Tant que la session Glance est en vie, update() ne rappelle
+                // pas provideGlance : il ne fait que réémettre l'état, ce qui recompose cette
+                // portée. Lue au-dehors, l'heure restait celle du démarrage de la session, et le
+                // cadran manquait le tic de minute comme un changement de fuseau.
+                val time = LocalTime.now()
                 val palette = widgetPalette(options)
 
                 // Le cadran est un disque : il tient dans le plus petit des deux côtés.

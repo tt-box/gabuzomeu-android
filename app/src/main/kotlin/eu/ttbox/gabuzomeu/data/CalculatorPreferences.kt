@@ -2,19 +2,47 @@ package eu.ttbox.gabuzomeu.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import eu.ttbox.gabuzomeu.core.eval.CalculationMode
 import eu.ttbox.gabuzomeu.core.eval.NumberNotation
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 
 private val Context.calculatorDataStore: DataStore<Preferences> by preferencesDataStore(
     name = "calculator",
+    corruptionHandler = calculatorCorruptionHandler(),
 )
+
+/**
+ * Un fichier illisible est remplacé par des préférences vides.
+ *
+ * Sans ce gestionnaire, la `CorruptionException` remontait à chaque lecture : le ViewModel la
+ * recevait dès son initialisation, et l'application plantait à **chaque** lancement, sans autre
+ * issue pour l'utilisateur que d'effacer ses données. Perdre la dernière expression saisie est
+ * un prix dérisoire en regard.
+ */
+internal fun calculatorCorruptionHandler(): ReplaceFileCorruptionHandler<Preferences> =
+    ReplaceFileCorruptionHandler { emptyPreferences() }
+
+/**
+ * Une erreur d'entrée-sortie à la lecture se lit comme « rien d'enregistré ».
+ *
+ * `CorruptionException` est une `IOException` : elle est couverte aussi, au cas où le
+ * gestionnaire de corruption lui-même échouerait. Toute autre exception est relancée — ce
+ * serait un bogue, pas un incident de stockage.
+ */
+internal fun Flow<Preferences>.orEmptyOnIoError(): Flow<Preferences> = catch { error ->
+    if (error is IOException) emit(emptyPreferences()) else throw error
+}
 
 /**
  * Implémentation de [SessionStore] sur DataStore Preferences.
@@ -27,12 +55,19 @@ private val Context.calculatorDataStore: DataStore<Preferences> by preferencesDa
  *
  * L'historique des calculs n'est pas conservé : la fonctionnalité était déjà morte dans
  * le projet d'origine, `HistoryAdapter` n'étant branché sur aucune `ListView`.
+ *
+ * Aucune erreur de stockage ne remonte d'ici : lecture comme écriture, un fichier corrompu ou
+ * un disque plein se traduisent par une session vide ou une sauvegarde manquée, jamais par un
+ * plantage. C'est ce qui permet au ViewModel de lire et d'écrire sans garde.
  */
-class CalculatorPreferences(context: Context) : SessionStore {
+class CalculatorPreferences internal constructor(private val dataStore: DataStore<Preferences>) :
+    SessionStore {
 
-    private val dataStore = context.calculatorDataStore
+    constructor(context: Context) : this(context.calculatorDataStore)
 
-    override val session: Flow<StoredSession> = dataStore.data.map { preferences ->
+    private val data: Flow<Preferences> = dataStore.data.orEmptyOnIoError()
+
+    override val session: Flow<StoredSession> = data.map { preferences ->
         StoredSession(
             keys = preferences[KEY_EXPRESSION].orEmpty(),
             notation = preferences[KEY_NOTATION]
@@ -55,7 +90,7 @@ class CalculatorPreferences(context: Context) : SessionStore {
         )
     }
 
-    override val settings: Flow<DisplaySettings> = dataStore.data.map { preferences ->
+    override val settings: Flow<DisplaySettings> = data.map { preferences ->
         val defaults = DisplaySettings()
         DisplaySettings(
             showShadokLabels = preferences[KEY_SHOW_LABELS] ?: defaults.showShadokLabels,
@@ -64,7 +99,7 @@ class CalculatorPreferences(context: Context) : SessionStore {
     }
 
     override suspend fun save(session: StoredSession) {
-        dataStore.edit { preferences ->
+        editIgnoringIoErrors { preferences ->
             preferences[KEY_EXPRESSION] = session.keys
             preferences[KEY_NOTATION] = session.notation.name
             preferences[KEY_MODE] = session.mode.name
@@ -79,9 +114,25 @@ class CalculatorPreferences(context: Context) : SessionStore {
     }
 
     override suspend fun saveSettings(settings: DisplaySettings) {
-        dataStore.edit { preferences ->
+        editIgnoringIoErrors { preferences ->
             preferences[KEY_SHOW_LABELS] = settings.showShadokLabels
             preferences[KEY_SHOW_DECIMAL] = settings.showDecimal
+        }
+    }
+
+    /**
+     * Écrit, sans laisser une erreur d'entrée-sortie (disque plein, fichier verrouillé ou
+     * corrompu) remonter jusqu'au ViewModel.
+     *
+     * Une sauvegarde manquée ne coûte que la reprise de la session au prochain lancement ;
+     * une exception non rattrapée, elle, coûterait l'application entière.
+     */
+    @Suppress("SwallowedException")
+    private suspend fun editIgnoringIoErrors(transform: (MutablePreferences) -> Unit) {
+        try {
+            dataStore.edit { preferences -> transform(preferences) }
+        } catch (_: IOException) {
+            // Volontairement ignorée : voir la documentation ci-dessus.
         }
     }
 
