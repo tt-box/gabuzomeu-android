@@ -1,5 +1,7 @@
 # Mises à jour automatiques des dépendances. Chaque PR passe la CI complète ; si elle
-# est verte, le workflow dependabot-automerge.yml la fusionne sans intervention.
+# est verte et qu'il s'agit d'une mise à jour Gradle patch ou mineure, le workflow
+# dependabot-automerge.yml la fusionne sans intervention. Les majeures et toutes les
+# PR github-actions attendent une relecture manuelle.
 version: 2
 updates:
   # Dépendances Gradle : gradle/libs.versions.toml (catalogue partagé avec build-logic)
@@ -36,7 +38,9 @@ updates:
           - "io.gitlab.arturbosch.detekt*"
           - "org.jetbrains.kotlinx.kover*"
 
-  # Actions GitHub des workflows.
+  # Actions GitHub des workflows. Elles sont épinglées par SHA de commit (commentaire
+  # `# vX.Y.Z`) : Dependabot met à jour le SHA et le commentaire ensemble. Jamais
+  # fusionnées automatiquement (voir dependabot-automerge.yml).
   - package-ecosystem: github-actions
     directory: /
     schedule:

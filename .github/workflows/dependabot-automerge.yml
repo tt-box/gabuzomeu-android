@@ -4,6 +4,15 @@ name: Dependabot auto-merge
 # les vérifications obligatoires de la branche main au vert : c'est la protection de
 # branche (« Require status checks to pass ») qui fait office de garde-fou, ce workflow
 # ne fait qu'armer la fusion.
+#
+# Périmètre volontairement restreint :
+# - seulement les mises à jour **patch** et **mineures** : une version majeure peut
+#   changer un comportement que la CI ne couvre pas, elle mérite une relecture ;
+# - **jamais** l'écosystème github-actions : une action s'exécute avec le jeton du
+#   workflow, et dans release.yml à côté des secrets de signature. Changer le SHA
+#   épinglé d'une action, c'est changer du code exécuté en CI : relecture manuelle.
+# Pour une PR groupée, `update-type` est la mise à jour la plus forte du groupe : une
+# seule majeure dans le lot suffit à exclure toute la PR.
 on: pull_request
 
 permissions:
@@ -18,15 +27,31 @@ jobs:
     steps:
       - name: Métadonnées Dependabot
         id: meta
-        uses: dependabot/fetch-metadata@v3
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Approuver et activer l'auto-merge (squash)
+        if: >-
+          steps.meta.outputs.package-ecosystem != 'github_actions' &&
+          (steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+           steps.meta.outputs.update-type == 'version-update:semver-minor')
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
         run: |
-          echo "Mise à jour : ${UPDATE_TYPE:-groupée}"
+          echo "Mise à jour : $UPDATE_TYPE"
           gh pr merge --auto --squash "$PR_URL"
+
+      # Le cas inverse, rendu visible dans le résumé du run plutôt que silencieux.
+      - name: Signaler une PR laissée à la relecture
+        if: >-
+          steps.meta.outputs.package-ecosystem == 'github_actions' ||
+          (steps.meta.outputs.update-type != 'version-update:semver-patch' &&
+           steps.meta.outputs.update-type != 'version-update:semver-minor')
+        env:
+          ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+        run: |
+          echo "::notice::Auto-merge non armé ($ECOSYSTEM, ${UPDATE_TYPE:-type inconnu}) : relecture manuelle requise"
