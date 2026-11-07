@@ -34,7 +34,7 @@ androidxTestRunner = "1.7.0"
 androidxEspresso = "3.7.0"
 
 detekt = "1.23.8"
-spotless = "8.9.0"
+spotless = "8.11.0"
 kover = "0.9.11"
 
 [libraries]
