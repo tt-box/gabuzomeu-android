@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import eu.ttbox.gabuzomeu.core.eval.NumberNotation
 import eu.ttbox.gabuzomeu.core.eval.Operator
 import eu.ttbox.gabuzomeu.ui.DisplayTags
@@ -49,7 +50,9 @@ class MainActivityTest {
             // l'échec tombait sur une recherche ambiguë plutôt que sur ce qui était testé.
             composeTestRule.onNodeWithTag(NotationTags.of(NumberNotation.DECIMAL)).performClick()
         }
-        composeTestRule.onNodeWithTag(KeypadTags.of(KeyAction.Clear)).performClick()
+        composeTestRule.onNodeWithTag(
+            KeypadTags.of(KeyAction.Clear),
+        ).performScrollTo().performClick()
     }
 
     private fun selectMode(tag: String) {
@@ -57,8 +60,13 @@ class MainActivityTest {
         composeTestRule.onNodeWithTag(tag).performClick()
     }
 
+    /**
+     * Sur un petit écran, le pavé NPI défile pour garder des touches de 48 dp : un clic sur
+     * une touche hors de la zone visible serait perdu (6, Entrée, 7 devenait 67). On amène
+     * donc chaque touche à l'écran avant de la presser.
+     */
     private fun press(vararg actions: KeyAction) = actions.forEach { action ->
-        composeTestRule.onNodeWithTag(KeypadTags.of(action)).performClick()
+        composeTestRule.onNodeWithTag(KeypadTags.of(action)).performScrollTo().performClick()
     }
 
     /**
