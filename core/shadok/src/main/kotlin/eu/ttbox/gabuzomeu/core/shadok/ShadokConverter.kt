@@ -16,7 +16,10 @@ object ShadokConverter {
 
     private val RADIX = BigInteger.valueOf(ShadokDigit.RADIX.toLong())
     private val RADIX_RATIONAL = Rational.of(ShadokDigit.RADIX)
-    private val HALF = Rational.of(BigInteger.ONE, BigInteger.TWO)
+
+    // `BigInteger.valueOf(2)` et non `BigInteger.TWO`, absente d'Android avant l'API 33
+    // (minSdk 31) : voir Rational.DECIMAL_PRIME_FACTORS et AndroidApiCompatibilityTest.
+    private val HALF = Rational.of(BigInteger.ONE, BigInteger.valueOf(2))
 
     /**
      * Écrit [value] en base 4 Shadok.

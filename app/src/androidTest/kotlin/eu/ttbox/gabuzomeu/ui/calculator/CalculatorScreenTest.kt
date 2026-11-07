@@ -352,8 +352,9 @@ class CalculatorScreenTest {
         listOf(KeyAction.LeftParen, KeyAction.RightParen, KeyAction.Evaluate).forEach { absent ->
             composeTestRule.onNodeWithTag(KeypadTags.of(absent)).assertDoesNotExist()
         }
+        // Sur un petit écran, les sept rangées NPI ne tiennent pas à 48 dp : le pavé défile.
         listOf(KeyAction.Enter, KeyAction.Swap, KeyAction.Drop, KeyAction.Negate).forEach { key ->
-            composeTestRule.onNodeWithTag(KeypadTags.of(key)).assertIsDisplayed()
+            composeTestRule.onNodeWithTag(KeypadTags.of(key)).performScrollTo().assertIsDisplayed()
         }
     }
 
@@ -495,10 +496,15 @@ class CalculatorScreenTest {
         val pressed = mutableListOf<KeyAction>()
         setScreen(rpn, callbacks = Callbacks(onKey = { pressed += it }))
 
-        composeTestRule.onNodeWithTag(KeypadTags.of(KeyAction.Digit('6'))).performClick()
-        composeTestRule.onNodeWithTag(KeypadTags.of(KeyAction.Enter)).performClick()
-        composeTestRule.onNodeWithTag(KeypadTags.of(KeyAction.Digit('7'))).performClick()
-        composeTestRule.onNodeWithTag(KeypadTags.of(KeyAction.Op(Operator.TIMES))).performClick()
+        // Le pavé NPI peut défiler sur un petit écran : on amène chaque touche à l'écran.
+        listOf(
+            KeyAction.Digit('6'),
+            KeyAction.Enter,
+            KeyAction.Digit('7'),
+            KeyAction.Op(Operator.TIMES),
+        ).forEach { key ->
+            composeTestRule.onNodeWithTag(KeypadTags.of(key)).performScrollTo().performClick()
+        }
 
         assertEquals(
             listOf(
