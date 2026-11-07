@@ -39,13 +39,13 @@ jobs:
     name: Construire et publier
     runs-on: ubuntu-latest
     env:
-      # Empreinte SHA-256 du certificat de release (ECDSA P-256, alias gabuzomeu-release).
+      # Empreinte SHA-256 du certificat de release (clé d'importation Play : RSA 4096, alias gabuzomeu-upload).
       # Publique par nature : elle épingle la clé attendue, de sorte qu'un secret
       # remplacé par erreur (ou malveillance) fasse échouer la release au lieu de
       # publier un APK signé par une autre clé — que les utilisateurs ne pourraient
       # d'ailleurs pas installer par-dessus la version existante.
       # En cas de rotation de clé, mettre à jour cette valeur.
-      EXPECTED_CERT_SHA256: c955b10cf9dab437a8d9c1aa81d83b97dc79e3ca22fde903c47817e5fe22aefc
+      EXPECTED_CERT_SHA256: 65fb9286eaefef125851153b605d348811373a91bc430eeb691e10eee2b6440b
     steps:
       # Une release sert à distribuer : un APK non signé ne s'installe pas. On échoue
       # avant toute compilation plutôt que de publier des artefacts inutilisables.
