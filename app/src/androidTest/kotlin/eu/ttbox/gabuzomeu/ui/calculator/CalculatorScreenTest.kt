@@ -1,13 +1,24 @@
 package eu.ttbox.gabuzomeu.ui.calculator
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertContentDescriptionContains
 import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -17,8 +28,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
 import eu.ttbox.gabuzomeu.R
 import eu.ttbox.gabuzomeu.core.eval.CalculationMode
+import eu.ttbox.gabuzomeu.core.eval.EvalError
 import eu.ttbox.gabuzomeu.core.eval.NumberNotation
 import eu.ttbox.gabuzomeu.core.eval.Operator
 import eu.ttbox.gabuzomeu.core.shadok.ShadokDigit
@@ -748,5 +761,87 @@ class CalculatorScreenTest {
         composeTestRule.onNodeWithTag(SettingsTags.HELP).performClick()
 
         assertEquals(true, opened)
+    }
+
+    // ------------------------------------------------------------- défauts corrigés
+
+    /**
+     * Téléphone couché : largeur `Medium`, hauteur `Compact`. L'empilement y laissait aux sept
+     * rangées NPI des touches de 10 à 15 dp ; elles doivent garder la taille d'une cible.
+     */
+    @Test
+    fun enPaysageLesTouchesNpiGardentQuaranteHuitDp() {
+        composeTestRule.setContent {
+            GabuzomeuTheme(dynamicColor = false) {
+                CalculatorScreen(
+                    state = rpn,
+                    widthSizeClass = WindowWidthSizeClass.Medium,
+                    heightSizeClass = WindowHeightSizeClass.Compact,
+                    onKey = {},
+                    onNotationChange = {},
+                    onModeChange = {},
+                    onSettingsChange = {},
+                    modifier = Modifier.requiredSize(width = 800.dp, height = 360.dp),
+                )
+            }
+        }
+
+        listOf(KeyAction.Digit('7'), KeyAction.Enter).forEach { action ->
+            composeTestRule.onNodeWithTag(KeypadTags.of(action)).assertHeightIsAtLeast(48.dp)
+        }
+    }
+
+    @Test
+    fun uneErreurEstAnnonceeParTalkBack() {
+        setScreen(CalculatorUiState(error = EvalError.DIVISION_BY_ZERO))
+
+        displayNode(DisplayTags.ERROR)
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+            )
+    }
+
+    @Test
+    fun unResultatEstAnnonceParTalkBack() {
+        setScreen(six.copy(showingResult = true))
+
+        displayNode(DisplayTags.GLYPHS)
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+            )
+    }
+
+    @Test
+    fun uneSaisieEnCoursNEstPasRelueAChaqueChiffre() {
+        setScreen(six)
+
+        displayNode(DisplayTags.GLYPHS)
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.LiveRegion))
+    }
+
+    /**
+     * Ouvrir le menu ne lit plus le presse-papiers (ce qui affichait l'avertissement
+     * d'Android 12+) : le texte n'est lu qu'au clic sur « Coller ».
+     */
+    @Test
+    fun collerLitLePressePapiersAuClic() {
+        var pasted: String? = null
+        val activity = composeTestRule.activity
+        activity.runOnUiThread {
+            activity.getSystemService(ClipboardManager::class.java)
+                .setPrimaryClip(ClipData.newPlainText("test", "12"))
+        }
+        setScreen(six, callbacks = Callbacks(onPaste = { pasted = it }))
+
+        composeTestRule.onNodeWithTag(DisplayTags.ACTIONS).performTouchInput { longClick() }
+        composeTestRule.waitUntil {
+            runCatching {
+                composeTestRule.onNodeWithTag(ActionTags.PASTE).assertIsEnabled()
+            }.isSuccess
+        }
+        composeTestRule.onNodeWithTag(ActionTags.PASTE).performClick()
+        composeTestRule.waitUntil { pasted != null }
+
+        assertEquals("12", pasted)
     }
 }

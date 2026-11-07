@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
                 // le `BackHandler` posé dans chacun rend le retour matériel naturel. Un `when`
                 // exhaustif garantit qu'un quatrième écran ne pourrait pas être oublié ici.
                 var screen by rememberSaveable { mutableStateOf(Screen.CALCULATOR) }
+                val windowSizeClass = calculateWindowSizeClass(this)
 
                 when (screen) {
                     Screen.HELP -> ShadokHelpScreen(onClose = { screen = Screen.CALCULATOR })
@@ -63,7 +64,8 @@ class MainActivity : ComponentActivity() {
 
                     Screen.CALCULATOR -> CalculatorScreen(
                         state = state,
-                        widthSizeClass = calculateWindowSizeClass(this).widthSizeClass,
+                        widthSizeClass = windowSizeClass.widthSizeClass,
+                        heightSizeClass = windowSizeClass.heightSizeClass,
                         onKey = viewModel::onKey,
                         onNotationChange = viewModel::onNotationChange,
                         onModeChange = viewModel::onModeChange,

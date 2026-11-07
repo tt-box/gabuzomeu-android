@@ -87,6 +87,10 @@ class CalculatorPreferences internal constructor(private val dataStore: DataStor
                 pending = preferences[KEY_SIMPLE_PENDING].orEmpty(),
                 entryNegative = preferences[KEY_SIMPLE_NEGATIVE] == true,
             ),
+            // Absentes des sessions écrites par une version antérieure : `false`, soit une
+            // saisie en cours, ce qui était justement le comportement de ces versions.
+            showingResult = preferences[KEY_SHOWING_RESULT] == true,
+            decimalApproximate = preferences[KEY_DECIMAL_APPROXIMATE] == true,
         )
     }
 
@@ -110,6 +114,8 @@ class CalculatorPreferences internal constructor(private val dataStore: DataStor
             preferences[KEY_SIMPLE_ACCUMULATOR] = session.simple.accumulator
             preferences[KEY_SIMPLE_PENDING] = session.simple.pending
             preferences[KEY_SIMPLE_NEGATIVE] = session.simple.entryNegative
+            preferences[KEY_SHOWING_RESULT] = session.showingResult
+            preferences[KEY_DECIMAL_APPROXIMATE] = session.decimalApproximate
         }
     }
 
@@ -147,6 +153,8 @@ class CalculatorPreferences internal constructor(private val dataStore: DataStor
         val KEY_SIMPLE_ACCUMULATOR = stringPreferencesKey("simple-accumulator")
         val KEY_SIMPLE_PENDING = stringPreferencesKey("simple-pending")
         val KEY_SIMPLE_NEGATIVE = booleanPreferencesKey("simple-entry-negative")
+        val KEY_SHOWING_RESULT = booleanPreferencesKey("showing-result")
+        val KEY_DECIMAL_APPROXIMATE = booleanPreferencesKey("decimal-approximate")
         val KEY_SHOW_LABELS = booleanPreferencesKey("show-shadok-labels")
         val KEY_SHOW_DECIMAL = booleanPreferencesKey("show-decimal")
     }

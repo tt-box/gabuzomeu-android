@@ -22,8 +22,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -88,6 +91,11 @@ fun ShadokDisplay(
                 text = stringResource(error.messageRes()),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error,
+                // Région vivante : TalkBack lit l'erreur dès qu'elle paraît, sans que
+                // l'utilisateur ait à quitter le pavé pour aller la chercher.
+                modifier = Modifier
+                    .testTag(DisplayTags.ERROR)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
             )
         }
     }
@@ -126,7 +134,6 @@ internal fun ValueActions(
 ) {
     DisplayActions(
         value = CopyableValue.of(state),
-        notation = state.notation,
         tag = DisplayTags.ACTIONS,
         modifier = Modifier.fillMaxWidth(),
         onPaste = onPaste,
@@ -164,6 +171,7 @@ internal fun GlyphLine(
             operatorColor = MaterialTheme.colorScheme.tertiary,
             modifier = lineModifier
                 .testTag(DisplayTags.GLYPHS)
+                .then(if (state.showingResult) ResultLiveRegion else Modifier)
                 .horizontalScroll(rememberScrollState(), reverseScrolling = scrollToEnd),
         )
     }
@@ -256,6 +264,14 @@ private fun DisplayLine(
         content(Modifier.weight(1f))
     }
 }
+
+/**
+ * Un résultat affiché est annoncé par TalkBack sans qu'on aille le chercher.
+ *
+ * Seulement le résultat : en région vivante permanente, la ligne serait relue en entier à
+ * chaque chiffre tapé, alors que la touche elle-même vient déjà d'être annoncée.
+ */
+private val ResultLiveRegion = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
 
 private fun EvalError.messageRes(): Int = when (this) {
     EvalError.EMPTY -> R.string.error_empty

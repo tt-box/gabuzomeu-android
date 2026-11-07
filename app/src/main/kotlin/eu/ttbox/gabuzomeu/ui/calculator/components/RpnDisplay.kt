@@ -30,7 +30,6 @@ import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import eu.ttbox.gabuzomeu.R
-import eu.ttbox.gabuzomeu.core.eval.NumberNotation
 import eu.ttbox.gabuzomeu.core.shadok.ShadokFormatter
 import eu.ttbox.gabuzomeu.data.DisplaySettings
 import eu.ttbox.gabuzomeu.ui.DisplayTags
@@ -96,7 +95,6 @@ internal fun ColumnScope.RpnDisplay(
         // niveau 1. Sinon ce sommet occupe le grand affichage, et la liste reprend à 2.
         firstLevel = if (onStack) TOP_LEVEL + 1 else TOP_LEVEL,
         showDecimal = state.settings.showDecimal,
-        notation = state.notation,
         onCopied = onCopied,
         modifier = Modifier
             .weight(1f)
@@ -213,7 +211,6 @@ private fun RpnStackArea(
     levels: List<StackLevel>,
     firstLevel: Int,
     showDecimal: Boolean,
-    notation: NumberNotation,
     modifier: Modifier = Modifier,
     onCopied: () -> Unit = {},
 ) {
@@ -236,7 +233,6 @@ private fun RpnStackArea(
             // sens ici — on n'écrit pas au milieu d'une pile — donc l'item n'apparaît pas.
             DisplayActions(
                 value = CopyableValue.of(level),
-                notation = notation,
                 tag = DisplayTags.stackLevelActions(depth),
                 modifier = Modifier.fillMaxWidth(),
                 onCopied = onCopied,

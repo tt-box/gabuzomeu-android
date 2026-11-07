@@ -21,6 +21,9 @@ object DisplayTags {
     const val LABELS = "display-labels"
     const val DECIMAL = "display-decimal"
 
+    /** Le message d'erreur sous l'afficheur, présent seulement quand une erreur est levée. */
+    const val ERROR = "display-error"
+
     /** La zone de pile NPI, présente seulement dans ce mode. */
     const val STACK = "display-stack"
 

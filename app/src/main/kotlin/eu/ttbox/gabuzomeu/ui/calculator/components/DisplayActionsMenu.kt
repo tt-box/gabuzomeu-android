@@ -1,6 +1,8 @@
 package eu.ttbox.gabuzomeu.ui.calculator.components
 
 import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Build
 import androidx.compose.foundation.combinedClickable
@@ -27,8 +29,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import eu.ttbox.gabuzomeu.R
-import eu.ttbox.gabuzomeu.core.eval.ClipboardNumber
-import eu.ttbox.gabuzomeu.core.eval.NumberNotation
 import eu.ttbox.gabuzomeu.ui.ActionTags
 import eu.ttbox.gabuzomeu.ui.calculator.CalculatorUiState
 import eu.ttbox.gabuzomeu.ui.calculator.StackLevel
@@ -108,7 +108,6 @@ data class CopyableValue(
 @Composable
 fun DisplayActions(
     value: CopyableValue,
-    notation: NumberNotation,
     tag: String,
     modifier: Modifier = Modifier,
     onPaste: ((String) -> Unit)? = null,
@@ -130,7 +129,6 @@ fun DisplayActions(
         ActionsMenu(
             expanded = expanded,
             value = value,
-            notation = notation,
             onPaste = onPaste,
             onCopied = onCopied,
             onDismiss = { expanded = false },
@@ -142,7 +140,6 @@ fun DisplayActions(
 private fun ActionsMenu(
     expanded: Boolean,
     value: CopyableValue,
-    notation: NumberNotation,
     onPaste: ((String) -> Unit)?,
     onCopied: () -> Unit,
     onDismiss: () -> Unit,
@@ -154,7 +151,7 @@ private fun ActionsMenu(
 
         // Absent, et non grisé, là où coller n'a pas de sens : on n'écrit pas au milieu
         // d'une pile.
-        if (onPaste != null) PasteItem(expanded, notation, onPaste, onDismiss)
+        if (onPaste != null) PasteItem(expanded, onPaste, onDismiss)
 
         ShareItem(value, onDismiss)
     }
@@ -188,34 +185,31 @@ private fun CopyItems(value: CopyableValue, onDismiss: () -> Unit, onCopied: () 
 }
 
 /**
- * Coller — actif seulement si le presse-papiers contient un nombre.
+ * Coller — actif seulement si le presse-papiers contient du texte.
  *
- * Le contenu est relu à chaque ouverture du menu, et non au clic : c'est ce qui permet de
- * griser l'item. Un texte illisible ne peut donc jamais atteindre le ViewModel, et il n'y a
- * pas d'échec silencieux à expliquer une fois le doigt levé.
+ * À l'ouverture du menu, on ne consulte que la **description** du presse-papiers (son type
+ * MIME) : depuis Android 12, en lire le contenu affiche le message système « collé depuis le
+ * presse-papiers », et ce message apparaissait à chaque ouverture du menu, même pour copier.
+ * Le texte n'est donc lu qu'au clic sur « Coller ». Un texte qui n'est pas un nombre est
+ * ignoré par le ViewModel, comme toute frappe refusée.
  */
 @Composable
-private fun PasteItem(
-    expanded: Boolean,
-    notation: NumberNotation,
-    onPaste: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
+private fun PasteItem(expanded: Boolean, onPaste: (String) -> Unit, onDismiss: () -> Unit) {
     val clipboard = LocalClipboard.current
-    var pastable by remember { mutableStateOf<String?>(null) }
+    val clipboardManager = LocalContext.current.getSystemService(ClipboardManager::class.java)
+    val scope = rememberCoroutineScope()
+    var hasText by remember { mutableStateOf(false) }
 
-    LaunchedEffect(expanded, notation) {
-        val text = if (expanded) clipboard.plainTextOrNull() else null
-        pastable = text?.takeIf { ClipboardNumber.parseOrNull(it, notation) != null }
+    LaunchedEffect(expanded) {
+        hasText = expanded && clipboardManager?.announcesText() == true
     }
 
-    val pasted = pastable
     DropdownMenuItem(
         text = { Text(stringResource(R.string.paste)) },
-        enabled = pasted != null,
+        enabled = hasText,
         onClick = {
             onDismiss()
-            if (pasted != null) onPaste(pasted)
+            scope.launch { clipboard.plainTextOrNull()?.let(onPaste) }
         },
         modifier = Modifier.testTag(ActionTags.PASTE),
     )
@@ -283,6 +277,18 @@ private fun ValueWriting.labelRes(): Int = when (this) {
 private fun shareIntent(text: String): Intent = Intent(Intent.ACTION_SEND).apply {
     type = "text/plain"
     putExtra(Intent.EXTRA_TEXT, text)
+}
+
+/**
+ * Le presse-papiers annonce-t-il du texte ?
+ *
+ * Seule la description est lue — jamais le contenu — pour ne pas déclencher l'avertissement
+ * d'accès au presse-papiers d'Android 12+.
+ */
+private fun ClipboardManager.announcesText(): Boolean {
+    val description = primaryClipDescription ?: return false
+    return description.hasMimeType(ClipDescription.MIMETYPE_TEXT_PLAIN) ||
+        description.hasMimeType(ClipDescription.MIMETYPE_TEXT_HTML)
 }
 
 /**

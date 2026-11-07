@@ -11,6 +11,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -36,6 +37,10 @@ import kotlinx.coroutines.launch
  * d'origine avait quatre dispositions XML de `main.xml` (`layout-port`, `layout-land`,
  * `layout-sw600dp`, `layout-sw600dp-land`) dont **deux avaient oublié les touches
  * Shadok**, rendant la fonctionnalité inaccessible sur tablette.
+ *
+ * La disposition côte à côte sert aussi au téléphone couché : sa hauteur est `Compact`
+ * alors que sa largeur n'est que `Medium`, et l'empilement y laissait aux sept rangées du
+ * pavé NPI des touches de 10 à 15 dp — bien en dessous des 48 dp d'une cible tactile.
  */
 @Composable
 fun CalculatorScreen(
@@ -46,6 +51,7 @@ fun CalculatorScreen(
     onModeChange: (CalculationMode) -> Unit,
     onSettingsChange: (DisplaySettings) -> Unit,
     modifier: Modifier = Modifier,
+    heightSizeClass: WindowHeightSizeClass = WindowHeightSizeClass.Medium,
     onPaste: (String) -> Unit = {},
     onOpenHelp: () -> Unit = {},
     onOpenGame: () -> Unit = {},
@@ -84,8 +90,9 @@ fun CalculatorScreen(
                 onOpenHelp = onOpenHelp,
                 onOpenGame = onOpenGame,
             )
-            if (widthSizeClass == WindowWidthSizeClass.Expanded) {
-                WideLayout(state, actions)
+            val compactHeight = heightSizeClass == WindowHeightSizeClass.Compact
+            if (widthSizeClass == WindowWidthSizeClass.Expanded || compactHeight) {
+                WideLayout(state, actions, compactHeight)
             } else {
                 StackedLayout(state, actions)
             }
@@ -152,9 +159,18 @@ private fun StackedLayout(state: CalculatorUiState, actions: CalculatorActions) 
     }
 }
 
-/** Tablette ou paysage large : afficheur et pavé côte à côte. */
+/**
+ * Tablette, ou téléphone en paysage : afficheur et pavé côte à côte.
+ *
+ * @param compactHeight hauteur rare : le sélecteur de notation passe sous l'afficheur pour
+ *   laisser au pavé toute la hauteur de sa colonne, et les marges se resserrent.
+ */
 @Composable
-private fun WideLayout(state: CalculatorUiState, actions: CalculatorActions) {
+private fun WideLayout(
+    state: CalculatorUiState,
+    actions: CalculatorActions,
+    compactHeight: Boolean,
+) {
     Row(
         modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -185,18 +201,26 @@ private fun WideLayout(state: CalculatorUiState, actions: CalculatorActions) {
                 onPaste = actions.onPaste,
                 onCopied = actions.onCopied,
             )
+            if (compactHeight) {
+                InputModeSelector(
+                    notation = state.notation,
+                    onNotationChange = actions.onNotationChange,
+                )
+            }
         }
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxSize()
-                .padding(all = 16.dp),
+                .padding(all = if (compactHeight) 8.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            InputModeSelector(
-                notation = state.notation,
-                onNotationChange = actions.onNotationChange,
-            )
+            if (!compactHeight) {
+                InputModeSelector(
+                    notation = state.notation,
+                    onNotationChange = actions.onNotationChange,
+                )
+            }
             Keypad(
                 mode = state.mode,
                 notation = state.notation,

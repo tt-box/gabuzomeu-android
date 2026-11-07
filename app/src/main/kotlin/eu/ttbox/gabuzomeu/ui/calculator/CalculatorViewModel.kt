@@ -30,6 +30,9 @@ import eu.ttbox.gabuzomeu.data.SessionStore
 import eu.ttbox.gabuzomeu.data.StoredRpn
 import eu.ttbox.gabuzomeu.data.StoredSession
 import eu.ttbox.gabuzomeu.data.StoredSimple
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -70,9 +73,19 @@ sealed interface KeyAction {
     data object Negate : KeyAction
 }
 
+/**
+ * Portée de l'écriture finale, à l'échelle du processus.
+ *
+ * `viewModelScope` est déjà annulé quand `onCleared` s'exécute : la dernière écriture doit
+ * donc partir d'ailleurs, sans quoi les frappes des 300 dernières millisecondes avant un
+ * retour arrière étaient perdues.
+ */
+private val processScope = CoroutineScope(SupervisorJob())
+
 class CalculatorViewModel(
     private val sessionStore: SessionStore,
     private val savedStateHandle: SavedStateHandle,
+    private val flushScope: CoroutineScope = processScope,
 ) : ViewModel() {
 
     private var mode = CalculationMode.CLASSIC
@@ -97,17 +110,22 @@ class CalculatorViewModel(
     /** Écritures disque regroupées : inutile de solliciter DataStore à chaque frappe. */
     private val persistRequests = MutableStateFlow<StoredSession?>(null)
 
-    init {
-        viewModelScope.launch {
-            // Anti-rebond : collectLatest annule le délai dès qu'une frappe suivante
-            // arrive, donc seule la dernière valeur d'une rafale atteint le disque.
-            // (Flow.debounce ferait la même chose mais reste une API @FlowPreview.)
-            persistRequests.filterNotNull().collectLatest { request ->
-                delay(PERSIST_DEBOUNCE_MS)
-                sessionStore.save(request)
-            }
-        }
+    /** La dernière session effectivement écrite : `onCleared` n'écrit que si elle a changé. */
+    private var lastPersisted: StoredSession? = null
 
+    /** La session disque a-t-elle été lue (ou rendue inutile par SavedStateHandle) ? */
+    private var sessionLoaded = false
+
+    /**
+     * Mode et notation choisis par l'utilisateur **avant** la fin de la lecture disque.
+     *
+     * Le menu et le sélecteur sont actifs dès le premier rendu : un choix fait pendant la
+     * lecture asynchrone était jusqu'ici écrasé par la session restaurée.
+     */
+    private var modeChosenEarly: CalculationMode? = null
+    private var notationChosenEarly: NumberNotation? = null
+
+    init {
         // Les réglages d'affichage vivent hors de l'expression : on les suit en continu.
         viewModelScope.launch {
             sessionStore.settings.collect { stored ->
@@ -123,11 +141,50 @@ class CalculatorViewModel(
             restore(saved)
         } else {
             publish()
-            viewModelScope.launch {
+        }
+
+        viewModelScope.launch {
+            if (saved == null) {
                 val stored = sessionStore.session.first()
-                // Ne pas écraser une saisie commencée pendant la lecture asynchrone.
-                if (untouched) restore(stored)
+                // Ne pas écraser une saisie commencée pendant la lecture asynchrone. Le mode
+                // et la notation choisis pendant cette lecture l'emportent, eux, sur le
+                // souvenir : ce sont des choix explicites de l'utilisateur.
+                if (untouched) {
+                    // Rien à réécrire si la session restaurée est celle du disque.
+                    lastPersisted = stored
+                    restore(stored.copy(mode = modeChosenEarly ?: stored.mode))
+                    notationChosenEarly?.let(::onNotationChange)
+                }
             }
+
+            // L'écriture disque n'est branchée qu'une fois la session d'origine connue : une
+            // session vide publiée au démarrage écraserait sinon celle qu'on est en train de
+            // lire. `persistRequests` étant un `StateFlow`, la collecte repart de la dernière
+            // valeur publiée — rien de ce qui a été tapé entre-temps ne se perd.
+            sessionLoaded = true
+
+            // Anti-rebond : collectLatest annule le délai dès qu'une frappe suivante
+            // arrive, donc seule la dernière valeur d'une rafale atteint le disque.
+            // (Flow.debounce ferait la même chose mais reste une API @FlowPreview.)
+            persistRequests.filterNotNull().collectLatest { request ->
+                if (request == lastPersisted) return@collectLatest
+                delay(PERSIST_DEBOUNCE_MS)
+                sessionStore.save(request)
+                lastPersisted = request
+            }
+        }
+    }
+
+    /**
+     * Dernière écriture, quand l'écran est quitté avant la fin de l'anti-rebond.
+     *
+     * `NonCancellable` et [flushScope] plutôt que `viewModelScope`, déjà annulé ici : c'est
+     * ce qui garantit que la frappe tapée juste avant le retour arrière atteint le disque.
+     */
+    override fun onCleared() {
+        val pending = persistRequests.value
+        if (sessionLoaded && pending != null && pending != lastPersisted) {
+            flushScope.launch(NonCancellable) { sessionStore.save(pending) }
         }
     }
 
@@ -159,8 +216,10 @@ class CalculatorViewModel(
      * caractère par caractère, exactement comme la restauration d'une session persistée. Un
      * tampon invalide ne peut donc pas naître d'un texte arbitraire.
      *
-     * Un texte illisible est ignoré sans bruit — et c'est acceptable parce que l'interface
-     * grise « Coller » dans ce cas : l'utilisateur ne peut pas déclencher un échec silencieux.
+     * Un texte illisible est ignoré sans bruit. L'interface ne grise « Coller » que si le
+     * presse-papiers ne contient pas de texte du tout : lire son contenu pour l'analyser
+     * déclencherait, dès l'ouverture du menu, l'avertissement d'Android 12+ « collé depuis
+     * le presse-papiers ».
      */
     fun onPaste(text: String) {
         val pasted = ClipboardNumber.parseOrNull(text, buffer.notation) ?: return
@@ -222,6 +281,7 @@ class CalculatorViewModel(
         }
 
     fun onNotationChange(notation: NumberNotation) {
+        if (!sessionLoaded) notationChosenEarly = notation
         // Les trois modes suivent : le sélecteur décimal/Shadok est un axe unique, il ne
         // doit pas laisser derrière lui un mode inactif écrit dans l'autre notation — un
         // pavé Shadok face à une frappe décimale refuserait ses propres glyphes.
@@ -239,6 +299,7 @@ class CalculatorViewModel(
      */
     fun onModeChange(target: CalculationMode) {
         if (target == mode) return
+        if (!sessionLoaded) modeChosenEarly = target
         mode = target
         error = null
         publish()
@@ -485,6 +546,8 @@ class CalculatorViewModel(
             pending = simple.pendingKeys(),
             entryNegative = simple.entryNegative,
         ),
+        showingResult = showingResult,
+        decimalApproximate = decimalApproximate,
     )
 
     private fun restore(session: StoredSession) {
@@ -503,8 +566,10 @@ class CalculatorViewModel(
             notation = session.notation,
         )
         mode = session.mode
-        showingResult = false
-        decimalApproximate = false
+        // Persistés : sans eux, un chiffre tapé après `2+3=` et une mort du processus
+        // prolongeait le résultat au lieu de repartir de zéro.
+        showingResult = session.showingResult
+        decimalApproximate = session.decimalApproximate
         error = null
         publish()
     }
@@ -520,6 +585,8 @@ class CalculatorViewModel(
         savedStateHandle[STATE_SIMPLE_ACCUMULATOR] = session.simple.accumulator
         savedStateHandle[STATE_SIMPLE_PENDING] = session.simple.pending
         savedStateHandle[STATE_SIMPLE_NEGATIVE] = session.simple.entryNegative
+        savedStateHandle[STATE_SHOWING_RESULT] = session.showingResult
+        savedStateHandle[STATE_DECIMAL_APPROXIMATE] = session.decimalApproximate
     }
 
     /** L'état sauvé par le système, ou `null` s'il s'agit d'un lancement à froid. */
@@ -527,8 +594,8 @@ class CalculatorViewModel(
         val keys = savedStateHandle.get<String>(STATE_KEYS) ?: return null
         return StoredSession(
             keys = keys,
-            notation = notationNamed(savedStateHandle[STATE_NOTATION]),
-            mode = modeNamed(savedStateHandle[STATE_MODE]),
+            notation = enumNamed(savedStateHandle[STATE_NOTATION], NumberNotation.DECIMAL),
+            mode = enumNamed(savedStateHandle[STATE_MODE], CalculationMode.CLASSIC),
             rpn = StoredRpn(
                 stack = savedStateHandle.get<String>(STATE_RPN_STACK).orEmpty(),
                 entry = savedStateHandle.get<String>(STATE_RPN_ENTRY).orEmpty(),
@@ -540,14 +607,10 @@ class CalculatorViewModel(
                 pending = savedStateHandle.get<String>(STATE_SIMPLE_PENDING).orEmpty(),
                 entryNegative = savedStateHandle.get<Boolean>(STATE_SIMPLE_NEGATIVE) == true,
             ),
+            showingResult = savedStateHandle.get<Boolean>(STATE_SHOWING_RESULT) == true,
+            decimalApproximate = savedStateHandle.get<Boolean>(STATE_DECIMAL_APPROXIMATE) == true,
         )
     }
-
-    private fun notationNamed(name: String?): NumberNotation =
-        NumberNotation.entries.firstOrNull { it.name == name } ?: NumberNotation.DECIMAL
-
-    private fun modeNamed(name: String?): CalculationMode =
-        CalculationMode.entries.firstOrNull { it.name == name } ?: CalculationMode.CLASSIC
 
     /** Les trois écritures de la ligne principale, rendues d'un seul coup. */
     private data class Lines(
@@ -569,6 +632,8 @@ class CalculatorViewModel(
         private const val STATE_SIMPLE_ACCUMULATOR = "simple-accumulator"
         private const val STATE_SIMPLE_PENDING = "simple-pending"
         private const val STATE_SIMPLE_NEGATIVE = "simple-entry-negative"
+        private const val STATE_SHOWING_RESULT = "showing-result"
+        private const val STATE_DECIMAL_APPROXIMATE = "decimal-approximate"
         private const val PERSIST_DEBOUNCE_MS = 300L
 
         /**
@@ -588,3 +653,7 @@ class CalculatorViewModel(
         }
     }
 }
+
+/** La constante nommée [name], ou [default] si le nom est absent ou inconnu. */
+private inline fun <reified E : Enum<E>> enumNamed(name: String?, default: E): E =
+    enumValues<E>().firstOrNull { it.name == name } ?: default

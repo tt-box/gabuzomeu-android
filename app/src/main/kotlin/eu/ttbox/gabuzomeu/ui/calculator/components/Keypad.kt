@@ -1,12 +1,16 @@
 package eu.ttbox.gabuzomeu.ui.calculator.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
@@ -21,6 +25,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import eu.ttbox.gabuzomeu.R
@@ -47,27 +52,47 @@ fun Keypad(
 ) {
     val rows = KeypadLayout.forMode(mode, notation)
 
-    Column(
-        modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(KEY_SPACING),
-    ) {
-        rows.forEach { row ->
-            Row(
-                modifier = Modifier
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        // Les rangées se partagent la hauteur tant que chacune garde la taille d'une cible
+        // tactile. En deçà — téléphone couché, sept rangées NPI — le pavé défile plutôt que
+        // d'écraser ses touches sous les 48 dp.
+        val shared = (maxHeight - KEY_SPACING * (rows.size - 1)) / rows.size
+        val fits = maxHeight == Dp.Infinity || shared >= MIN_KEY_HEIGHT
+        Column(
+            modifier = if (fits) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(KEY_SPACING),
-            ) {
-                row.forEach { key ->
-                    KeyButton(
-                        key = key,
-                        onKey = onKey,
-                        modifier = Modifier
-                            .weight(key.weight)
-                            .fillMaxSize(),
-                    )
-                }
+                    .verticalScroll(rememberScrollState())
+            },
+            verticalArrangement = Arrangement.spacedBy(KEY_SPACING),
+        ) {
+            rows.forEach { row ->
+                KeyRow(
+                    row = row,
+                    onKey = onKey,
+                    modifier = if (fits) Modifier.weight(1f) else Modifier.height(MIN_KEY_HEIGHT),
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun KeyRow(row: List<KeySpec>, onKey: (KeyAction) -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(KEY_SPACING),
+    ) {
+        row.forEach { key ->
+            KeyButton(
+                key = key,
+                onKey = onKey,
+                modifier = Modifier
+                    .weight(key.weight)
+                    .fillMaxSize(),
+            )
         }
     }
 }
@@ -181,6 +206,9 @@ private fun KeyKind.colors(): ButtonColors = when (this) {
 }
 
 private val KEY_SPACING = 8.dp
+
+/** La taille minimale d'une cible tactile selon Material et les règles d'accessibilité. */
+private val MIN_KEY_HEIGHT = 48.dp
 private val GLYPH_KEY_SIZE = 30.dp
 
 /** Plancher du repli typographique : en dessous, une touche cesse d'être lisible. */

@@ -37,6 +37,11 @@ data class StoredSimple(
  * Les trois modes de calcul sont conservés **côte à côte** : basculer de la calculatrice
  * classique vers la NPI ne détruit rien, et revenir retrouve l'expression laissée en
  * chemin. [mode] dit seulement lequel des trois est affiché.
+ *
+ * [showingResult] et [decimalApproximate] décrivent l'expression du mode classique : sans
+ * eux, un `7` tapé après `2+3=` et une mort du processus prolongeait le résultat (« 57 »)
+ * au lieu de repartir de zéro. Leurs valeurs par défaut sont celles d'une saisie en cours,
+ * ce qui garde lisibles les sessions écrites avant leur apparition.
  */
 data class StoredSession(
     val keys: String = "",
@@ -44,6 +49,8 @@ data class StoredSession(
     val mode: CalculationMode = CalculationMode.CLASSIC,
     val rpn: StoredRpn = StoredRpn(),
     val simple: StoredSimple = StoredSimple(),
+    val showingResult: Boolean = false,
+    val decimalApproximate: Boolean = false,
 )
 
 /**
