@@ -96,6 +96,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # Même groupe que la publication du badge de couverture (ci.yml) : une seule
+    # écriture à la fois sur la branche badges.
+    concurrency:
+      group: badges
+      cancel-in-progress: false
     steps:
       - name: Publier cve.json sur la branche badges
         env:
@@ -107,7 +112,7 @@ jobs:
           if [ "$COUNT" -eq 0 ]; then color=brightgreen; else color=red; fi
           git init -q -b badges badges && cd badges
           git config user.name "github-actions[bot]"
-          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           # Branche créée au premier passage (orpheline : aucun lien avec main), reprise ensuite.
           if git ls-remote --exit-code --heads origin badges >/dev/null; then

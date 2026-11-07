@@ -97,6 +97,20 @@ jobs:
       - name: Rapport de couverture
         run: ./gradlew koverXmlReport
 
+      # Badge SVG calculé ici, sans service externe (même script que zapette) ; publié
+      # sur la branche `badges` par le job coverage-badge, sur main uniquement.
+      - name: Badge de couverture
+        run: bash scripts/coverage-badge.sh build/reports/kover/report.xml coverage.svg
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage
+          path: |
+            build/reports/kover/
+            coverage.svg
+          if-no-files-found: error
+          retention-days: 14
+
       # Un incident chez Codecov ne doit pas rendre la CI rouge — et donc bloquer
       # l'auto-merge des PR Dependabot.
       - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
@@ -120,6 +134,51 @@ jobs:
         with:
           name: apk-release
           path: app/build/outputs/apk/release/*.apk
+
+  # Publie le badge de couverture sur la branche orpheline `badges` (main est protégée :
+  # le jeton de la CI ne peut pas y pousser). Job séparé : seul lui écrit, et il
+  # n'exécute aucun code du projet. Commit seulement si le badge change.
+  coverage-badge:
+    name: Publication du badge de couverture
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: badges
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage
+          path: ${{ runner.temp }}/coverage
+
+      - name: Publier coverage.svg sur la branche badges
+        env:
+          BADGE: ${{ runner.temp }}/coverage/coverage.svg
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git init -q -b badges badges && cd badges
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          for attempt in 1 2 3; do
+            if git ls-remote --exit-code --heads origin badges >/dev/null; then
+              git fetch -q --depth=1 origin badges
+              git reset -q --soft FETCH_HEAD
+              git checkout -q FETCH_HEAD -- .
+            fi
+            cp "$BADGE" coverage.svg
+            git add coverage.svg
+            if git diff --cached --quiet; then echo "Couverture inchangée."; exit 0; fi
+            git commit -q -m "badge: couverture"
+            git push -q origin HEAD:badges && { echo "Badge publié."; exit 0; }
+            sleep 5
+          done
+          echo "::error::Impossible de publier le badge de couverture"
+          exit 1
 
   instrumentation:
     name: Tests instrumentés (émulateur API 31)

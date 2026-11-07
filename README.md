@@ -1,13 +1,17 @@
 # GaBuZoMeu — la calculatrice en base 4 des Shadoks
 
 [![CI](https://github.com/tt-box/gabuzomeu-android/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/ci.yml)
-[![Couverture](https://codecov.io/gh/tt-box/gabuzomeu-android/branch/main/graph/badge.svg)](https://codecov.io/gh/tt-box/gabuzomeu-android)
-[![CVE](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftt-box%2Fgabuzomeu-android%2Fbadges%2Fcve.json&logo=github)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/security.yml)
-[![Release](https://github.com/tt-box/gabuzomeu-android/actions/workflows/release.yml/badge.svg)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/release.yml)
-[![Dernière version](https://img.shields.io/github/v/release/tt-box/gabuzomeu-android?include_prereleases&sort=semver&label=version)](https://github.com/tt-box/gabuzomeu-android/releases)
-[![Dependabot](https://img.shields.io/badge/Dependabot-actif-025E8C?logo=dependabot)](https://github.com/tt-box/gabuzomeu-android/network/updates)
-[![Kotlin](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftt-box%2Fgabuzomeu-android%2Fmain%2Fgradle%2Flibs.versions.toml&query=%24.versions.kotlin&label=Kotlin&logo=kotlin&color=7F52FF)](https://kotlinlang.org)
-[![API min](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftt-box%2Fgabuzomeu-android%2Fmain%2Fgradle%2Flibs.versions.toml&query=%24.versions.minSdk&label=API%20min&logo=android&color=3DDC84)](https://developer.android.com/tools/releases/platforms)
+[![Fusion auto Dependabot](https://github.com/tt-box/gabuzomeu-android/actions/workflows/dependabot-automerge.yml/badge.svg)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/dependabot-automerge.yml)
+[![Dependabot](https://img.shields.io/badge/Dependabot-activé-025E8C?logo=dependabot&logoColor=white)](https://github.com/tt-box/gabuzomeu-android/security/dependabot)
+[![Scan CVE](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftt-box%2Fgabuzomeu-android%2Fbadges%2Fcve.json&logo=google&logoColor=white)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/security.yml)
+[![Couverture](https://raw.githubusercontent.com/tt-box/gabuzomeu-android/badges/coverage.svg)](https://github.com/tt-box/gabuzomeu-android/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/release/tt-box/gabuzomeu-android?include_prereleases&sort=semver&label=version&logo=github&logoColor=white)](https://github.com/tt-box/gabuzomeu-android/releases)
+[![Licence](https://img.shields.io/badge/licence-LGPL--3.0--or--later-blue?logo=gnu&logoColor=white)](COPYING.LESSER)
+
+[![Android](https://img.shields.io/badge/Android-12%2B%20%E2%86%92%2016%20(API%2036)-3DDC84?logo=android&logoColor=white)](gradle/libs.versions.toml)
+[![Kotlin](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftt-box%2Fgabuzomeu-android%2Fmain%2Fgradle%2Flibs.versions.toml&query=%24.versions.kotlin&label=Kotlin&logo=kotlin&logoColor=white&color=7F52FF)](gradle/libs.versions.toml)
+[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)](gradle/libs.versions.toml)
+[![AGP](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftt-box%2Fgabuzomeu-android%2Fmain%2Fgradle%2Flibs.versions.toml&query=%24.versions.agp&label=AGP&logo=gradle&logoColor=white&color=02303A)](gradle/libs.versions.toml)
 
 > Quand il n'y a pas de Shadoks, on dit **GA**
 > Quand il y a un shadok de plus, on dit **BU**
@@ -153,8 +157,10 @@ commentaire ensemble.
 
 **Couverture** : [Kover](https://github.com/Kotlin/kotlinx-kover) instrumente les tests
 unitaires des quatre modules ; `./gradlew koverXmlReport` (ou `koverHtmlReport`) produit
-le rapport agrégé dans `build/reports/kover/`, que la CI publie sur Codecov (via OIDC,
-sans secret). Les tests instrumentés sur émulateur n'y sont pas comptés.
+le rapport agrégé dans `build/reports/kover/`. La CI en tire le badge SVG
+(`scripts/coverage-badge.sh`, sans service externe), publié sur la branche `badges` à
+chaque push sur `main`, et transmet aussi le rapport à Codecov (via OIDC, sans secret).
+Les tests instrumentés sur émulateur n'y sont pas comptés.
 
 **Dépendances** : Dependabot (`.github/dependabot.yml`) propose chaque lundi les mises à
 jour Gradle et GitHub Actions, regroupées par famille. Une fois la CI verte, une mise à
@@ -218,4 +224,10 @@ qui est faux aussi : la bonne réponse est `Ga.Zo`).
 
 ## Licence
 
-Le code d'origine dérive de l'AOSP Calculator2, sous licence Apache 2.0.
+GaBuZoMeu est un logiciel libre distribué sous **GNU Lesser General Public License,
+version 3 ou ultérieure** (LGPL-3.0-or-later) : voir [`COPYING.LESSER`](COPYING.LESSER),
+qui complète la GNU GPL v3 fournie dans [`COPYING`](COPYING).
+
+Le code d'origine (tag `legacy-adt`) dérivait de l'AOSP Calculator2, sous licence
+Apache 2.0, compatible avec la LGPL v3 ; les parties qui en subsisteraient restent
+soumises à leur licence d'origine.
