@@ -138,7 +138,7 @@ Quatre workflows GitHub Actions, dans `.github/workflows/` :
 | Workflow | Déclencheur | Rôle |
 |---|---|---|
 | `ci.yml` | push sur `main`, chaque pull request | Tests JVM de la logique métier, puis `spotlessCheck`, `detekt`, `build` (compilation + lint + tests) et APK release. Un troisième job lance les tests instrumentés sur un émulateur API 31. |
-| `release.yml` | push d'un tag `1.2.3` / `v1.2.3` (reprise manuelle possible) | Rejoue toutes les vérifications, construit l'AAB et l'APK **signés**, et crée la release GitHub avec les artefacts. |
+| `release.yml` | push d'un tag `1.2.3` / `v1.2.3` (reprise manuelle possible) | Rejoue toutes les vérifications, construit l'AAB et l'APK **signés**, plus un APK **non signé** (`-unsigned.apk`, à signer avec sa propre clé), et crée la release GitHub avec les artefacts et leurs empreintes SHA-256. |
 | `security.yml` | push sur `main`, chaque pull request, chaque lundi | OSV-Scanner contrôle les CVE connues des dépendances du catalogue (badge « CVE ») ; le graphe Gradle complet est soumis à GitHub pour les alertes Dependabot. |
 | `dependabot-automerge.yml` | PR ouverte par Dependabot | Arme l'auto-merge (squash) : la PR est fusionnée dès que les vérifications obligatoires sont vertes. |
 

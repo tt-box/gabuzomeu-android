@@ -41,6 +41,12 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
                 // les AndroidX en 37.1. OldTargetApi signalerait cet écart assumé à
                 // chaque build ; le relever se décide, il ne se subit pas.
                 disable += "OldTargetApi"
+
+                // « Une version plus récente existe » : ces contrôles interrogent les
+                // dépôts au moment du build, si bien qu'un code inchangé passe au rouge
+                // le jour où une dépendance publie une version. Les mises à jour sont
+                // l'affaire de Dependabot, qui les propose en PR testées.
+                disable += setOf("GradleDependency", "AndroidGradlePluginVersion", "NewerVersionAvailable")
             }
         }
 

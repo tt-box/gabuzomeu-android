@@ -69,7 +69,7 @@ jobs:
           # sinon on construirait la pointe de main et non la version publiée.
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '17'
@@ -158,24 +158,50 @@ jobs:
             echo "$aab : certificat $actual"
           done
 
-      # Noms explicites dans la release : « app-release.apk » ne dit ni quoi ni quelle version.
-      - name: Renommer les artefacts
+      # Noms explicites dans la release : « app-release.apk » ne dit ni quoi ni quelle
+      # version. Les artefacts signés sont mis à l'abri dans dist/ : le build non signé
+      # qui suit réécrit le répertoire de sortie de Gradle.
+      - name: Rassembler les artefacts signés
         env:
           VERSION: ${{ steps.version.outputs.name }}
         run: |
-          mv app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/gabuzomeu-$VERSION.apk"
-          mv app/build/outputs/bundle/release/app-release.aab "app/build/outputs/bundle/release/gabuzomeu-$VERSION.aab"
-          cd app/build/outputs
-          sha256sum apk/release/*.apk bundle/release/*.aab | sed 's#[^ ]*/##' > "gabuzomeu-$VERSION.sha256"
+          mkdir -p dist
+          mv app/build/outputs/apk/release/app-release.apk "dist/gabuzomeu-$VERSION.apk"
+          mv app/build/outputs/bundle/release/app-release.aab "dist/gabuzomeu-$VERSION.aab"
+
+      # APK non signé, pour qui veut le signer avec sa propre clé (F-Droid, builds
+      # reproductibles, distribution interne). Mêmes sources et même version : seule la
+      # signature diffère. Sans les variables GABUZOMEU_STORE_*, la configuration de
+      # signature release est absente (voir app/build.gradle.kts).
+      - name: Construire l'APK non signé
+        env:
+          GABUZOMEU_VERSION_NAME: ${{ steps.version.outputs.name }}
+          GABUZOMEU_VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION: ${{ steps.version.outputs.name }}
+        run: |
+          set -euo pipefail
+          ./gradlew :app:assembleRelease
+          apk=app/build/outputs/apk/release/app-release-unsigned.apk
+          [ -f "$apk" ] || { echo "::error::APK non signé introuvable : $apk"; exit 1; }
+          # Garde-fou : un APK « unsigned » qui porterait une signature serait trompeur.
+          APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          if "$APKSIGNER" verify "$apk" >/dev/null 2>&1; then
+            echo "::error::$apk porte une signature"; exit 1
+          fi
+          mv "$apk" "dist/gabuzomeu-$VERSION-unsigned.apk"
+
+      - name: Empreintes SHA-256
+        env:
+          VERSION: ${{ steps.version.outputs.name }}
+        working-directory: dist
+        run: |
+          sha256sum *.apk *.aab > "gabuzomeu-$VERSION.sha256"
           cat "gabuzomeu-$VERSION.sha256"
 
       - uses: actions/upload-artifact@v7
         with:
           name: gabuzomeu-${{ steps.version.outputs.name }}
-          path: |
-            app/build/outputs/bundle/release/*.aab
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/*.sha256
+          path: dist/*
 
       - name: Publier les artefacts sur la release
         uses: softprops/action-gh-release@v3
@@ -188,9 +214,9 @@ jobs:
           prerelease: ${{ steps.version.outputs.prerelease }}
           generate_release_notes: true
           # Une release sans APK est précisément le symptôme à ne plus jamais laisser
-          # passer en silence : si le glob ne trouve rien, le job échoue.
+          # passer en silence : si un glob ne trouve rien, le job échoue.
           fail_on_unmatched_files: true
           files: |
-            app/build/outputs/bundle/release/*.aab
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/*.sha256
+            dist/gabuzomeu-*.aab
+            dist/gabuzomeu-*.apk
+            dist/gabuzomeu-*.sha256
