@@ -60,8 +60,7 @@ android {
                 storePassword = releaseStorePassword
                 keyAlias = releaseKeyAlias
                 keyPassword = releaseKeyPassword
-                // Clé historique ttbox (DSA 1024, déjà utilisée par la version publiée : Play
-                // refuse une mise à jour signée autrement). minSdk 31 : le schéma v1 (JAR) est
+                // Clé ECDSA P-256 (secp256r1). minSdk 31 : le schéma v1 (JAR) est
                 // inutile — et ne serait jamais vérifié — ; v2 couvre Android 7+,
                 // v3 / v3.1 permettent une future rotation de clé (Android 9+ / 13+).
                 enableV1Signing = false

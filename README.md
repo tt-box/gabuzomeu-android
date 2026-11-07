@@ -108,9 +108,8 @@ pas reconstruire un tampon invalide.
 
 ## Signature de la version release
 
-La version publiée est signée avec la clé historique **ttbox** (DSA 1024, alias `android`,
-SHA-256 `D7:77:3B:01:…:DC:8D`), convertie en PKCS12 : Play n'accepte une mise à jour qu'avec
-la même clé. Pour une nouvelle appli, on peut générer une clé **ECDSA P-256** :
+La clé de release est une clé **ECDSA P-256** (secp256r1), au format PKCS12, signée
+en v2 + v3/v3.1 (+ v4). Pour en générer une :
 
 ```bash
 keytool -genkeypair -keystore gabuzomeu-release.p12 -storetype PKCS12 \
