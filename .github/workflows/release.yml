@@ -38,6 +38,7 @@ jobs:
   release:
     name: Construire et publier
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       # Empreinte SHA-256 du certificat de release (clé d'importation Play : RSA 4096, alias gabuzomeu-upload).
       # Publique par nature : elle épingle la clé attendue, de sorte qu'un secret
@@ -80,6 +81,8 @@ jobs:
           java-version: '17'
 
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Déterminer la version
         id: version
@@ -160,11 +163,47 @@ jobs:
           echo "name=$VERSION"        >> "$GITHUB_OUTPUT"
           echo "code=$VERSION_CODE"   >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          # Pour Gradle (app/build.gradle.kts), dans toutes les étapes suivantes.
+          echo "GABUZOMEU_VERSION_NAME=$VERSION"     >> "$GITHUB_ENV"
+          echo "GABUZOMEU_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           echo "Tag $TAG -> version $VERSION (versionCode $VERSION_CODE, prerelease $PRERELEASE)"
 
-      # On ne publie jamais une version qui ne passe pas les tests.
-      - name: Vérifications
-        run: ./gradlew spotlessCheck detekt build
+      # Un seul passage Gradle, pour tout : vérifications (on ne publie jamais une version
+      # qui ne passe pas les tests) et artefacts. `build` produit déjà l'APK release —
+      # minifié par R8 — et `:app:bundleRelease` l'AAB, tous deux à la version du tag
+      # (variables posées par « Déterminer la version »).
+      #
+      # Gradle ne voit jamais le keystore : sans les variables GABUZOMEU_STORE_*, la
+      # configuration de signature release est absente (app/build.gradle.kts) et les
+      # artefacts sortent non signés. On les signe ensuite, tels quels, avec les outils
+      # du SDK. Auparavant, l'application était compilée et passée dans R8 deux fois
+      # (vérification, puis build signé) et empaquetée trois fois (le build non signé en
+      # plus). Bonus : ni Gradle ni ses plugins ne s'exécutent à côté des secrets, et
+      # l'APK « unsigned » publié est exactement celui qui a été signé.
+      - name: Vérifier et construire (non signé)
+        run: ./gradlew spotlessCheck detekt build :app:bundleRelease
+
+      # Copies de travail dans dist/ : l'APK non signé est publié tel quel, l'AAB non
+      # signé ne sert que d'entrée à la signature.
+      - name: Rassembler les artefacts non signés
+        env:
+          VERSION: ${{ steps.version.outputs.name }}
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/release/app-release-unsigned.apk
+          aab=app/build/outputs/bundle/release/app-release.aab
+          for f in "$apk" "$aab"; do
+            [ -f "$f" ] || { echo "::error::Artefact introuvable : $f"; exit 1; }
+          done
+          # Garde-fou : un APK « unsigned » qui porterait une signature serait trompeur,
+          # et signifierait que Gradle a eu accès à une clé.
+          APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
+          if "$APKSIGNER" verify "$apk" >/dev/null 2>&1; then
+            echo "::error::$apk porte une signature"; exit 1
+          fi
+          mkdir -p dist "$RUNNER_TEMP/unsigned"
+          cp "$apk" "dist/gabuzomeu-$VERSION-unsigned.apk"
+          cp "$aab" "$RUNNER_TEMP/unsigned/gabuzomeu-$VERSION.aab"
 
       - name: Restaurer le keystore
         id: keystore
@@ -174,75 +213,48 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.p12"
           echo "path=$RUNNER_TEMP/release.p12" >> "$GITHUB_OUTPUT"
 
-      - name: Construire l'AAB et l'APK signés
+      # Mêmes schémas que la configuration Gradle (app/build.gradle.kts) : minSdk 31,
+      # donc pas de v1 (JAR) ; v2, plus v3/v3.1 pour une future rotation de clé. Le v4
+      # (fichier .idsig séparé, pour l'installation incrémentale via adb) n'a jamais été
+      # publié : inutile de le produire. apksigner aligne lui-même les entrées stockées.
+      # L'AAB, lui, se signe en JAR, comme le fait Gradle (et comme l'attend Play).
+      - name: Signer l'APK et l'AAB
         env:
-          GABUZOMEU_VERSION_NAME: ${{ steps.version.outputs.name }}
-          GABUZOMEU_VERSION_CODE: ${{ steps.version.outputs.code }}
-          GABUZOMEU_STORE_FILE: ${{ steps.keystore.outputs.path }}
-          GABUZOMEU_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          GABUZOMEU_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          GABUZOMEU_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew :app:bundleRelease :app:assembleRelease
+          VERSION: ${{ steps.version.outputs.name }}
+          KEYSTORE: ${{ steps.keystore.outputs.path }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$BUILD_TOOLS/apksigner" sign             --ks "$KEYSTORE" --ks-type PKCS12 --ks-key-alias "$KEY_ALIAS"             --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD             --v1-signing-enabled false --v2-signing-enabled true             --v3-signing-enabled true --v4-signing-enabled false             --out "dist/gabuzomeu-$VERSION.apk"             "dist/gabuzomeu-$VERSION-unsigned.apk"
+          "$BUILD_TOOLS/zipalign" -c 4 "dist/gabuzomeu-$VERSION.apk"
+          jarsigner -keystore "$KEYSTORE" -storetype PKCS12             -storepass:env KEYSTORE_PASSWORD -keypass:env KEY_PASSWORD             -digestalg SHA-256             -signedjar "dist/gabuzomeu-$VERSION.aab"             "$RUNNER_TEMP/unsigned/gabuzomeu-$VERSION.aab" "$KEY_ALIAS"
 
       # Le keystore n'a plus d'usage : on ne le laisse pas traîner sur le runner.
       - name: Effacer le keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/release.p12"
 
-      # Contrôle indépendant de Gradle : l'APK doit être signé, vérifiable par Android,
-      # et par le certificat épinglé ci-dessus. Idem pour l'AAB (signature JAR).
+      # Contrôle indépendant : l'APK doit être signé, vérifiable par Android, et par le
+      # certificat épinglé ci-dessus. Idem pour l'AAB (signature JAR).
       - name: Vérifier la signature des artefacts
-        run: |
-          set -euo pipefail
-          APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
-          shopt -s nullglob
-          apks=(app/build/outputs/apk/release/*.apk)
-          aabs=(app/build/outputs/bundle/release/*.aab)
-          [ ${#apks[@]} -gt 0 ] && [ ${#aabs[@]} -gt 0 ] || { echo "::error::Artefacts introuvables"; exit 1; }
-          for apk in "${apks[@]}"; do
-            case "$apk" in *-unsigned.apk) echo "::error::APK non signé : $apk"; exit 1 ;; esac
-            out="$("$APKSIGNER" verify --verbose --print-certs "$apk")"
-            echo "$out" | grep -E "^Verified using|certificate DN|certificate SHA-256|key algorithm|key size"
-            actual="$(echo "$out" | grep -m1 'certificate SHA-256 digest' | awk '{print $NF}')"
-            [ "$actual" = "$EXPECTED_CERT_SHA256" ] || { echo "::error::$apk signé par $actual, attendu $EXPECTED_CERT_SHA256"; exit 1; }
-          done
-          for aab in "${aabs[@]}"; do
-            actual="$(keytool -printcert -jarfile "$aab" | grep -m1 'SHA256:' | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')"
-            [ "$actual" = "$EXPECTED_CERT_SHA256" ] || { echo "::error::$aab signé par '$actual', attendu $EXPECTED_CERT_SHA256"; exit 1; }
-            echo "$aab : certificat $actual"
-          done
-
-      # Noms explicites dans la release : « app-release.apk » ne dit ni quoi ni quelle
-      # version. Les artefacts signés sont mis à l'abri dans dist/ : le build non signé
-      # qui suit réécrit le répertoire de sortie de Gradle.
-      - name: Rassembler les artefacts signés
         env:
           VERSION: ${{ steps.version.outputs.name }}
         run: |
-          mkdir -p dist
-          mv app/build/outputs/apk/release/app-release.apk "dist/gabuzomeu-$VERSION.apk"
-          mv app/build/outputs/bundle/release/app-release.aab "dist/gabuzomeu-$VERSION.aab"
-
-      # APK non signé, pour qui veut le signer avec sa propre clé (F-Droid, builds
-      # reproductibles, distribution interne). Mêmes sources et même version : seule la
-      # signature diffère. Sans les variables GABUZOMEU_STORE_*, la configuration de
-      # signature release est absente (voir app/build.gradle.kts).
-      - name: Construire l'APK non signé
-        env:
-          GABUZOMEU_VERSION_NAME: ${{ steps.version.outputs.name }}
-          GABUZOMEU_VERSION_CODE: ${{ steps.version.outputs.code }}
-          VERSION: ${{ steps.version.outputs.name }}
-        run: |
           set -euo pipefail
-          ./gradlew :app:assembleRelease
-          apk=app/build/outputs/apk/release/app-release-unsigned.apk
-          [ -f "$apk" ] || { echo "::error::APK non signé introuvable : $apk"; exit 1; }
-          # Garde-fou : un APK « unsigned » qui porterait une signature serait trompeur.
           APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
-          if "$APKSIGNER" verify "$apk" >/dev/null 2>&1; then
-            echo "::error::$apk porte une signature"; exit 1
-          fi
-          mv "$apk" "dist/gabuzomeu-$VERSION-unsigned.apk"
+          apk="dist/gabuzomeu-$VERSION.apk"
+          aab="dist/gabuzomeu-$VERSION.aab"
+          out="$("$APKSIGNER" verify --verbose --print-certs "$apk")"
+          echo "$out" | grep -E "^Verified using|certificate DN|certificate SHA-256|key algorithm|key size"
+          actual="$(echo "$out" | grep -m1 'certificate SHA-256 digest' | awk '{print $NF}')"
+          [ "$actual" = "$EXPECTED_CERT_SHA256" ] || { echo "::error::$apk signé par $actual, attendu $EXPECTED_CERT_SHA256"; exit 1; }
+          jarsigner -verify "$aab" >/dev/null || { echo "::error::$aab : signature JAR invalide"; exit 1; }
+          actual="$(keytool -printcert -jarfile "$aab" | grep -m1 'SHA256:' | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')"
+          [ "$actual" = "$EXPECTED_CERT_SHA256" ] || { echo "::error::$aab signé par '$actual', attendu $EXPECTED_CERT_SHA256"; exit 1; }
+          echo "$aab : certificat $actual"
 
       - name: Empreintes SHA-256
         env:
