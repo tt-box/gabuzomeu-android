@@ -40,12 +40,67 @@ concurrency:
 # le support du cache de configuration** — que ce projet active
 # (`org.gradle.configuration-cache=true` dans gradle.properties). Passer en v6 relève
 # donc d'une décision de licence, pas d'une montée de version de routine.
+#
+# Cache de configuration Gradle : setup-gradle ne le sauvegarde que s'il peut le
+# chiffrer (il peut contenir des valeurs sensibles), d'où `cache-encryption-key` sur
+# chaque job Gradle. Sans le secret GRADLE_ENCRYPTION_KEY (PR Dependabot ou forks, qui
+# n'y ont pas accès), le job tourne normalement, simplement sans ce cache.
+#
+# Chaque job a un `timeout-minutes` : sans lui, un émulateur ou un démon Gradle bloqué
+# consommerait jusqu'à 6 h de runner.
 jobs:
+  # Un commit qui ne touche que la documentation n'a pas à relancer Gradle ni
+  # l'émulateur. On ne peut pas filtrer au niveau du workflow (`paths-ignore`) : les
+  # jobs sont des checks requis par la protection de main, et un workflow non déclenché
+  # laisserait la PR bloquée en « attente ». Un job sauté par `if:`, lui, compte comme
+  # réussi. Tout commit qui touche autre chose que la doc lance la CI complète, de même
+  # qu'un déclenchement manuel ou une comparaison impossible (première poussée d'une
+  # branche).
+  changes:
+    name: Détection des changements
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Le commit touche-t-il autre chose que la documentation ?
+        id: diff
+        env:
+          BASE_PR: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) base="$BASE_PR" ;;
+            push) base="$BEFORE" ;;
+            *) base="" ;;
+          esac
+          if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ] \
+              || ! files="$(git diff --name-only "$base...$GITHUB_SHA" 2>/dev/null)"; then
+            echo "Pas de base de comparaison : CI complète."
+            echo "code=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "$files"
+          # Documentation : docs/, tout *.md, licences, cartes graft.
+          if echo "$files" | grep -qvE '^(docs/|graft/|COPYING)|\.md$'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Documentation seule : build et tests sautés."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # La logique métier ne dépend pas d'Android : ses tests tournent en quelques
   # secondes et échouent vite. On les isole donc du reste.
   core:
     name: Logique métier (JVM)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -67,6 +122,8 @@ jobs:
           java-version: '17'
 
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Tests de :core:shadok et :core:eval
         run: ./gradlew :core:shadok:test :core:eval:test
@@ -79,7 +136,10 @@ jobs:
 
   build:
     name: Build, lint et style
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: read
       # Jeton OIDC pour Codecov : pas de secret à gérer, y compris sur les PR Dependabot.
@@ -93,6 +153,8 @@ jobs:
           java-version: '17'
 
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       - name: Vérification du formatage
         run: ./gradlew spotlessCheck
@@ -155,6 +217,7 @@ jobs:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
     concurrency:
@@ -194,7 +257,10 @@ jobs:
 
   instrumentation:
     name: Tests instrumentés (émulateur API 31)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -204,6 +270,8 @@ jobs:
           java-version: '17'
 
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
       # L'accélération matérielle KVM est nécessaire pour que l'émulateur soit utilisable.
       - name: Activer KVM
@@ -213,6 +281,34 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # AVD et snapshot de démarrage en cache : sans lui, chaque run retélécharge l'image
+      # système et démarre l'émulateur à froid (plusieurs minutes). Recette documentée
+      # par android-emulator-runner. La clé porte la configuration de l'AVD : en changer
+      # (niveau d'API, cible, architecture) produit un nouveau cache.
+      - name: Cache de l'AVD
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-31-google_apis-x86_64-v1
+
+      # Premier run (cache absent) : on crée l'AVD et on sauvegarde un snapshot à chaud.
+      - name: Créer l'AVD et son snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 31
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Snapshot de l'AVD généré."
+
+      # Les runs suivants démarrent depuis le snapshot, sans jamais le réécrire : le
+      # cache reste celui d'un émulateur propre.
       - name: Tests Compose et widget sur émulateur
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
@@ -220,6 +316,8 @@ jobs:
           api-level: 31
           target: google_apis
           arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: ./gradlew :app:connectedDebugAndroidTest
 
