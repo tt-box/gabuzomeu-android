@@ -214,9 +214,12 @@ jobs:
           echo "path=$RUNNER_TEMP/release.p12" >> "$GITHUB_OUTPUT"
 
       # Mêmes schémas que la configuration Gradle (app/build.gradle.kts) : minSdk 31,
-      # donc pas de v1 (JAR) ; v2, plus v3/v3.1 pour une future rotation de clé. Le v4
-      # (fichier .idsig séparé, pour l'installation incrémentale via adb) n'a jamais été
-      # publié : inutile de le produire. apksigner aligne lui-même les entrées stockées.
+      # donc pas de v1 (JAR) ; v2, v3/v3.1 pour une future rotation de clé, et v4. Le v4
+      # est un fichier .idsig séparé (installation incrémentale via adb) : produit comme
+      # par Gradle, mais hors de dist/, il n'est pas publié.
+      # L'alignement est contrôlé avant signature (-P 16 : bibliothèques natives sur des
+      # pages de 16 Ko, exigé par Play) — la signature v2+ scelle l'archive, on ne peut
+      # plus la réaligner ensuite — puis de nouveau après.
       # L'AAB, lui, se signe en JAR, comme le fait Gradle (et comme l'attend Play).
       - name: Signer l'APK et l'AAB
         env:
@@ -228,9 +231,22 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
-          "$BUILD_TOOLS/apksigner" sign             --ks "$KEYSTORE" --ks-type PKCS12 --ks-key-alias "$KEY_ALIAS"             --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD             --v1-signing-enabled false --v2-signing-enabled true             --v3-signing-enabled true --v4-signing-enabled false             --out "dist/gabuzomeu-$VERSION.apk"             "dist/gabuzomeu-$VERSION-unsigned.apk"
-          "$BUILD_TOOLS/zipalign" -c 4 "dist/gabuzomeu-$VERSION.apk"
-          jarsigner -keystore "$KEYSTORE" -storetype PKCS12             -storepass:env KEYSTORE_PASSWORD -keypass:env KEY_PASSWORD             -digestalg SHA-256             -signedjar "dist/gabuzomeu-$VERSION.aab"             "$RUNNER_TEMP/unsigned/gabuzomeu-$VERSION.aab" "$KEY_ALIAS"
+          "$BUILD_TOOLS/zipalign" -c -P 16 4 "dist/gabuzomeu-$VERSION-unsigned.apk"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE" --ks-type PKCS12 --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD \
+            --v1-signing-enabled false --v2-signing-enabled true \
+            --v3-signing-enabled true --v4-signing-enabled true \
+            --out "dist/gabuzomeu-$VERSION.apk" \
+            "dist/gabuzomeu-$VERSION-unsigned.apk"
+          # apksigner écrit le .idsig à côté de l'APK : on le sort de dist/.
+          mv "dist/gabuzomeu-$VERSION.apk.idsig" "$RUNNER_TEMP/unsigned/"
+          "$BUILD_TOOLS/zipalign" -c -P 16 4 "dist/gabuzomeu-$VERSION.apk"
+          jarsigner -keystore "$KEYSTORE" -storetype PKCS12 \
+            -storepass:env KEYSTORE_PASSWORD -keypass:env KEY_PASSWORD \
+            -digestalg SHA-256 \
+            -signedjar "dist/gabuzomeu-$VERSION.aab" \
+            "$RUNNER_TEMP/unsigned/gabuzomeu-$VERSION.aab" "$KEY_ALIAS"
 
       # Le keystore n'a plus d'usage : on ne le laisse pas traîner sur le runner.
       - name: Effacer le keystore
