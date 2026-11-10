@@ -36,6 +36,10 @@ class AndroidApplicationConventionPlugin : Plugin<Project> {
                 warningsAsErrors = true
                 abortOnError = true
                 checkDependencies = true
+                // Les sources de test ne sont pas livrées : checkTestSources est déjà à
+                // false, leur analyse ne rapportait presque rien. ignoreTestSources
+                // supprime purement les tâches lintAnalyze*UnitTest / *AndroidTest.
+                ignoreTestSources = true
 
                 // targetSdk est volontairement figé à 36 (niveau exigé par Play, dont
                 // les comportements d'exécution sont testés) tandis que compileSdk suit

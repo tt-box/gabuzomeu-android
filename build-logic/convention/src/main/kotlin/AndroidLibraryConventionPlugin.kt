@@ -32,6 +32,8 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                 warningsAsErrors = true
                 abortOnError = true
                 checkDependencies = true
+                // Voir le plugin application : pas d'analyse lint des sources de test.
+                ignoreTestSources = true
                 // Versions plus récentes : laissées à Dependabot (voir le plugin application).
                 disable += setOf("GradleDependency", "AndroidGradlePluginVersion", "NewerVersionAvailable")
             }
